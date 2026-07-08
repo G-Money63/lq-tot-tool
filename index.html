@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Quinta TOT Tool — v0.4.0</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --navy:#0f3b5c;--navy2:#12496f;--ink:#161c24;--muted:#5a6572;
+    --line:#d7dde4;--bg:#eef2f6;--card:#ffffff;
+    --ok:#0f7a4a;--okbg:#e6f4ec;--warn:#9a5b00;--warnbg:#fdf1dc;
+    --bad:#a4232b;--badbg:#fbe7e8;--accent:#c8952a;--info:#0b5aa2;--infobg:#e7f0fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  header{background:var(--navy);color:#fff;padding:22px 26px}
+  header h1{margin:0;font-size:22px}header p{margin:4px 0 0;color:#cfe0ee;font-size:13px}
+  .wrap{max-width:1160px;margin:0 auto;padding:22px 20px 60px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:20px}
+  .drops{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.drops{grid-template-columns:1fr}}
+  .drop{border:2px dashed #9fb4c6;border-radius:10px;background:#f7fafc;padding:24px;text-align:center;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.hot{background:#eaf2f8;border-color:var(--navy)}
+  .drop strong{color:var(--navy)}
+  .drop.done{border-style:solid;border-color:var(--ok);background:var(--okbg)}
+  .hint{color:var(--muted);font-size:12px;margin-top:6px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:9px;padding:14px 16px}
+  .kpi .n{font-size:24px;font-weight:700;color:var(--navy)}
+  .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .kpi.flag .n{color:var(--bad)}
+  h2{font-size:16px;margin:0 0 12px;color:var(--navy);border-bottom:2px solid var(--line);padding-bottom:8px}
+  h3{font-size:15px;margin:0}
+  .unit{border:1px solid var(--line);border-radius:10px;margin-bottom:16px;overflow:hidden}
+  .uhead{background:var(--navy2);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .uhead .sub{color:#cfe0ee;font-size:12px}
+  .ubody{padding:14px 16px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
+  th:first-child,td:first-child,th.l,td.l{text-align:left}
+  thead th{background:#f2f6f9;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase}
+  tr:last-child td{border-bottom:none}
+  input.base{width:88px;text-align:right;font:inherit;font-size:13px;padding:4px 6px;border:1px solid #b9c4d0;border-radius:6px}
+  input.note,select.assign{font:inherit;font-size:12px;padding:4px 6px;border:1px solid #b9c4d0;border-radius:6px}
+  input.note{width:150px}
+  .pick{margin-top:4px;display:flex;gap:4px;justify-content:flex-end}
+  .mini{font-size:11px;padding:2px 6px;border:1px solid var(--navy);background:#fff;color:var(--navy);border-radius:5px;cursor:pointer}
+  .mini:hover{background:var(--navy);color:#fff}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .b-full{background:var(--okbg);color:var(--ok)}.b-tot{background:var(--warnbg);color:var(--warn)}.b-ex{background:#e9ecf1;color:#495260}
+  .flagtag{display:inline-block;font-size:11px;font-weight:700;color:var(--bad);background:var(--badbg);padding:2px 8px;border-radius:20px;margin:1px 0}
+  .review{background:#fff3cd;color:#7a5b00;border:1px solid #e6c96b}
+  .filebox{margin-top:14px;border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:#fbfcfe}
+  .filebox.full{border-left:5px solid var(--ok)}.filebox.tot{border-left:5px solid var(--warn)}.filebox.ex{border-left:5px solid #8894a2}
+  .filebox .ttl{font-weight:700;font-size:13px;margin-bottom:8px}
+  .lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px}
+  .lines div{background:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 10px}
+  .lines .lab{font-size:11px;color:var(--muted)}.lines .val{font-size:15px;font-weight:700}
+  .item{border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:13px;border:1px solid var(--line);background:#fafcff}
+  .item.over{border-color:#f2c9cc;background:#fdf1f2}.item.warnitem{border-color:#f0d9b0;background:#fffaf0}
+  .item.okitem{border-color:#bfe3cd;background:var(--okbg)}
+  .btn{background:var(--navy);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font:inherit}
+  .btn:hover{background:var(--navy2)}.btn.sm{padding:6px 12px;font-size:12px}.btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--navy)}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .note{font-size:12px;color:var(--muted)}
+  .hidden{display:none}
+  .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
+  .matched{color:var(--ok);font-weight:600}.unmatched{color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <h1>La Quinta TOT Tool</h1>
+  <p>La Quinta Resort Management · monthly TOT reconciliation, smart deposit matching &amp; filing — v0.4.0</p>
+</header>
+<div class="wrap">
+  <div class="panel">
+    <div class="drops">
+      <div id="dropCsv" class="drop">
+        <div><strong>1 · Guesty CSV</strong> (required)</div>
+        <div class="hint">All-listings reservations export. Drop or click.</div>
+        <input id="fileCsv" type="file" accept=".csv" class="hidden">
+      </div>
+      <div id="dropPdf" class="drop">
+        <div><strong>2 · Bank statement PDF</strong> (optional)</div>
+        <div class="hint">La Quinta Resort Mgmt statement — matches Airbnb deposits. Drop or click.</div>
+        <input id="filePdf" type="file" accept=".pdf" class="hidden">
+      </div>
+    </div>
+    <div id="err" class="note" style="color:var(--bad);margin-top:10px"></div>
+    <div class="note" style="margin-top:6px">Everything runs on your device. Nothing is uploaded anywhere.</div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="panel">
+      <div class="toolbar">
+        <button class="btn" id="dlMaster">⬇ Download master workbook (.xlsx)</button>
+        <span class="note">One tab per unit + summary. Per-unit files are in each unit card.</span>
+      </div>
+      <div class="cards" id="kpis"></div>
+    </div>
+
+    <div class="panel" id="reconPanel">
+      <h2>Reconciliation — needs your eyes</h2>
+      <div id="recon"></div>
+    </div>
+
+    <div class="panel">
+      <h2>By unit — review flagged rows, then download</h2>
+      <p class="note" style="margin-top:-6px">On a flagged row, tap <strong>G</strong> to use the Guesty base or <strong>A</strong> for Airbnb, or type your own. The REVIEW tag clears once you decide.</p>
+      <div id="units"></div>
+    </div>
+
+    <div class="panel hidden" id="depPanel">
+      <h2>Bank deposits — Airbnb payouts</h2>
+      <div id="depControl" class="cards" style="margin-bottom:14px"></div>
+      <p class="note" style="margin-top:-4px">Auto-matched by amount. Assign the rest with the dropdown (batched payouts, monthly installments, or prior-month stays). Edit a row if the parser missed anything.</p>
+      <div style="overflow-x:auto"><table id="depTable"></table></div>
+      <button class="btn sm ghost" id="addDep" style="margin-top:10px">＋ Add deposit manually</button>
+    </div>
+
+    <div class="panel hidden" id="expPanel">
+      <h2>Expenses &amp; transfers detected <span class="note">(preview for owner reports — v2)</span></h2>
+      <div style="overflow-x:auto"><table id="expTable"></table></div>
+    </div>
+  </div>
+  <div class="foot">v0.4.0 · working aid, not tax advice · tiers: ≤26 nts 11% · 27–29 nts 10% (separate form) · 30+ nts exempt</div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const RATE_TOT=0.10,RATE_TBID=0.01;
+let RES=[],DEPOSITS=[],EXPENSES=[];
+const r2=v=>Math.round((v+Number.EPSILON)*100)/100;
+const money=v=>'$'+(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const numify=x=>{const n=parseFloat(String(x==null?'':x).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;};
+function tierOf(n){if(n>=30)return'exempt';if(n>=27)return'tot';return'full';}
+function tierLabel(t){return t==='exempt'?'Exempt (30+ nts)':t==='tot'?'TOT-only (27–29 nts)':'Full 11% (≤26 nts)';}
+function tierBadge(t){const c=t==='exempt'?'b-ex':t==='tot'?'b-tot':'b-full';return `<span class="badge ${c}">${tierLabel(t)}</span>`;}
+function parseDate(s){const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})/);return m?new Date(+m[1],+m[2]-1,+m[3]):null;}
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function pick(row,names){for(const n of names)for(const k in row)if(k.trim().toUpperCase()===n)return row[k];return '';}
+
+function buildRes(rows){
+  const out=[];
+  rows.forEach(row=>{
+    const listing=String(pick(row,['LISTING'])||'').trim();if(!listing)return;
+    const slash=listing.indexOf('/');
+    const unitCode=(slash>=0?listing.slice(0,slash):listing).trim();
+    const unitName=(slash>=0?listing.slice(slash+1):'').trim();
+    const ci=parseDate(pick(row,['CHECK-IN','CHECKIN'])),co=parseDate(pick(row,['CHECK-OUT','CHECKOUT']));
+    const nights=(ci&&co)?Math.round((co-ci)/86400000):0;
+    const accom=numify(pick(row,['ACCOMMODATION FARE'])),clean=numify(pick(row,['CLEANING FARE','CLEANING FEE'])),pet=numify(pick(row,['PET FEE']));
+    const gross=r2(accom+clean+pet);
+    const airbnbTax=numify(pick(row,['TRANSIENT OCCUPANCY TAX']));
+    const airbnbBase=airbnbTax?r2(airbnbTax/0.11):0;
+    const tier=tierOf(nights);
+    const payout=numify(pick(row,['TOTAL PAYOUT']));
+    const disc=airbnbBase&&Math.abs(airbnbBase-gross)>1;
+    const confCode=String(pick(row,['CONFIRMATION CODE'])||'').trim();
+    const channel=/^HM/i.test(confCode)?'Airbnb':(confCode?'Other/VRBO':'');
+    out.push({unitCode,unitName,listing,conf:confCode,channel,
+      guest:String(pick(row,['GUEST'])||'').trim(),ci,co,nights,tier,accom:r2(accom),clean:r2(clean),pet:r2(pet),
+      gross,airbnbTax:r2(airbnbTax),airbnbBase,payout:r2(payout),
+      filedBase:tier==='exempt'?0:(airbnbTax?airbnbBase:gross),
+      filingMonth:ci?(MONTHS[ci.getMonth()]+' '+ci.getFullYear()):'Unknown',
+      disc,reviewed:!disc,note:''});
+  });
+  out.sort((a,b)=>a.unitCode.localeCompare(b.unitCode)||(a.ci&&b.ci?a.ci-b.ci:0));
+  return out;
+}
+function taxOf(r){const b=r.filedBase;const tot=r.tier==='exempt'?0:r2(b*RATE_TOT);const tbid=r.tier==='full'?r2(b*RATE_TBID):0;return{tot,tbid,total:r2(tot+tbid)};}
+function groupBy(a,f){const m=new Map();a.forEach(x=>{const k=f(x);(m.get(k)||m.set(k,[]).get(k)).push(x);});return m;}
+
+/* ---------- deposit matching ---------- */
+function autoMatchDeposits(){
+  DEPOSITS.forEach(d=>{d.assignedTo=null;d.suggested=false;d.hint='';});
+  const used=new Set();
+  // 1) exact single amount
+  RES.forEach(r=>{if(used.has(r.conf))return;const d=DEPOSITS.find(x=>!x.assignedTo&&Math.abs(x.amt-r.payout)<0.02);if(d){d.assignedTo=r.conf;used.add(r.conf);}});
+  // 2) two-deposit sum (extensions / split payments)
+  RES.forEach(r=>{if(used.has(r.conf))return;const free=DEPOSITS.filter(x=>!x.assignedTo);
+    for(let i=0;i<free.length;i++)for(let j=i+1;j<free.length;j++)
+      if(Math.abs(free[i].amt+free[j].amt-r.payout)<0.02){free[i].assignedTo=r.conf;free[j].assignedTo=r.conf;used.add(r.conf);return;}});
+  // 3) suggestions for the rest (by amount + date proximity)
+  const yr=(RES.find(r=>r.ci)||{}).ci;const year=yr?yr.getFullYear():new Date().getFullYear();
+  const earliest=RES.reduce((m,r)=>r.ci&&(!m||r.ci<m)?r.ci:m,null);
+  DEPOSITS.forEach(d=>{if(d.assignedTo)return;
+    const dm=String(d.date).match(/(\d{1,2})\/(\d{1,2})/);const dd=dm?new Date(year,+dm[1]-1,+dm[2]):null;
+    let best=null;
+    RES.forEach(r=>{if(!r.ci)return;const gap=dd?Math.round((dd-r.ci)/86400000):999;const near=gap>=0&&gap<=7;
+      const hasDep=DEPOSITS.some(x=>x.assignedTo===r.conf);
+      const closeFull=Math.abs(d.amt-r.payout)<=Math.max(2,r.payout*0.01)&&!hasDep;
+      const installment=r.tier==='exempt'&&d.amt<r.payout-1&&near&&!hasDep;
+      let score=0,why='';
+      if(closeFull){score=100-Math.abs(d.amt-r.payout)+(near?5:0);why='amount ≈ full payout';}
+      else if(installment){score=60-Math.abs(gap);why='monthly installment (long-term stay)';}
+      if(score>0&&(!best||score>best.score))best={r,score,why};});
+    if(best){d.assignedTo=best.r.conf;d.suggested=true;d.hint=best.why;}
+    else d.hint=(earliest&&dd&&dd<earliest)?'before your earliest check-in — likely a prior-month stay':'no clean match — likely a batched payout covering several stays; assign manually';
+  });
+}
+
+/* ---------- render ---------- */
+function render(){
+  let cityTax=0,disc=0,over=0;
+  RES.forEach(r=>{cityTax+=taxOf(r).total;if(r.disc)disc++;if(r.tier==='tot'&&r.airbnbTax>0)over+=r2(r.airbnbTax-taxOf(r).total);});
+  const units=new Set(RES.map(r=>r.unitCode)).size;
+  const needReview=RES.filter(r=>!r.reviewed).length;
+  document.getElementById('kpis').innerHTML=[
+    ['Units',units],['Reservations',RES.length],['Total tax due',money(cityTax)],
+    ['Needs review',needReview,needReview?'flag':''],['Exempt',RES.filter(r=>r.tier==='exempt').length],['TOT-only',RES.filter(r=>r.tier==='tot').length]
+  ].map(([l,n,c])=>`<div class="kpi ${c||''}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+  // reconciliation
+  const recon=[];
+  RES.forEach(r=>{
+    if(r.tier==='tot'&&r.airbnbTax>0){const t=taxOf(r),d=r2(r.airbnbTax-t.total);
+      recon.push({cls:'over',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, TOT-only. Airbnb collected ${money(r.airbnbTax)} (11%); city owed ${money(t.total)} (10%). Over-collected ${money(d)} TBID → file the TOT-only form; set aside/refund per the city. (Fix Guesty/Airbnb tax settings so 27+ nt stays skip the 1% TBID.)`});}
+    if(r.disc){const gd=r2(r.gross-r.airbnbBase);
+      // is the delta a separate Airbnb deposit? (e.g. added pet fee)
+      const petDep=DEPOSITS.find(x=>Math.abs(x.amt-gd)<2);
+      const hint=petDep?` A separate ${money(petDep.amt)} Airbnb deposit (${petDep.date}) matches this gap — likely an added fee that IS taxable, so the <strong>Guesty base ${money(r.gross)}</strong> is probably right.`:` If the stay was extended in Airbnb, the <strong>Airbnb base ${money(r.airbnbBase)}</strong> is the settled one; if a fee was added in Guesty, use Guesty.`;
+      recon.push({cls:'warnitem',html:`<strong>${r.unitCode} · ${r.guest}</strong> — Guesty base ${money(r.gross)} vs Airbnb base ${money(r.airbnbBase)} (Δ ${money(gd)}).${hint}`});}
+    if(r.tier==='exempt')recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, <strong>exempt</strong>. Zero return (0 on lines 1–3). Reservation total ${money(r.gross)}; Airbnb bills long stays monthly, so use the month's deposit for owner revenue.`});
+  });
+  document.getElementById('recon').innerHTML=recon.length?recon.map(x=>`<div class="item ${x.cls}">${x.html}</div>`).join(''):'<div class="item okitem">Nothing to flag — every reservation reconciles cleanly.</div>';
+
+  // units
+  let html='';
+  for(const [code,list] of groupBy(RES,r=>r.unitCode)){
+    const name=list[0].unitName||'';
+    const rowsHtml=list.map(r=>{
+      const idx=RES.indexOf(r),t=taxOf(r),flags=[];
+      if(!r.reviewed)flags.push('<span class="flagtag review">REVIEW</span>');
+      if(r.tier==='tot'&&r.airbnbTax>0)flags.push('<span class="flagtag">TBID over</span>');
+      const dep=DEPOSITS.filter(x=>x.assignedTo===r.conf);
+      const depTxt=dep.length?`<span class="matched">✓ ${dep.map(d=>money(d.amt)).join(' + ')}</span>`:(DEPOSITS.length?'<span class="unmatched">— assign</span>':'');
+      return `<tr>
+        <td class="l">${r.guest}<div class="note">${r.conf}${r.channel?' · '+r.channel:''}</div></td>
+        <td>${r.ci?r.ci.toLocaleDateString('en-US'):''}→${r.co?r.co.toLocaleDateString('en-US'):''}</td>
+        <td>${r.nights}</td><td class="l">${tierBadge(r.tier)}</td>
+        <td>${money(r.gross)}</td><td>${r.airbnbBase?money(r.airbnbBase):'—'}</td>
+        <td>${r.tier==='exempt'?'—':`<input class="base" type="number" step="0.01" value="${r.filedBase.toFixed(2)}" data-idx="${idx}">${r.disc?`<div class="pick"><button class="mini" data-set="g" data-idx="${idx}">G</button><button class="mini" data-set="a" data-idx="${idx}">A</button></div>`:''}`}</td>
+        <td>${money(t.total)}</td>
+        <td>${depTxt}</td>
+        <td class="l"><input class="note" type="text" placeholder="note…" value="${(r.note||'').replace(/"/g,'&quot;')}" data-idx="${idx}"></td>
+        <td class="l">${flags.join(' ')||'<span class="badge b-full">ok</span>'}</td>
+      </tr>`;}).join('');
+    let boxes='';
+    for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
+      const [fm,tier]=key.split('||');
+      const count=tier==='exempt'?0:g.length,nights=tier==='exempt'?0:g.reduce((s,r)=>s+r.nights,0),base=tier==='exempt'?0:r2(g.reduce((s,r)=>s+r.filedBase,0));
+      const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});
+      const form=tier==='full'?'Standard TOT form (11%)':tier==='tot'?'Separate TOT-only form — email vacationlq@laquintaca.gov':'Zero return (0 on lines 1–3)';
+      boxes+=`<div class="filebox ${tier==='full'?'full':tier==='tot'?'tot':'ex'}"><div class="ttl">${fm} — ${form}</div><div class="lines">
+        <div><div class="lab">Line 1 · Reservations</div><div class="val">${count}</div></div>
+        <div><div class="lab">Line 2 · Nights</div><div class="val">${nights}</div></div>
+        <div><div class="lab">Line 3 · Rent collected</div><div class="val">${money(base)}</div></div>
+        <div><div class="lab">TOT (10%)</div><div class="val">${money(r2(tt.tot))}</div></div>
+        <div><div class="lab">TBID (1%)</div><div class="val">${money(r2(tt.tbid))}</div></div>
+        <div><div class="lab">Total due</div><div class="val">${money(r2(tt.total))}</div></div></div>
+        ${tier==='exempt'?`<div class="note" style="margin-top:8px">Reservation total ${money(r2(g.reduce((s,r)=>s+r.gross,0)))} (recorded, not taxed).</div>`:''}</div>`;
+    }
+    html+=`<div class="unit"><div class="uhead"><div><h3>${code}</h3><div class="sub">${name}</div></div>
+      <button class="btn sm ghost" data-unit="${encodeURIComponent(code)}">⬇ Download ${code}</button></div>
+      <div class="ubody"><table><thead><tr><th class="l">Guest</th><th>Stay</th><th>Nts</th><th class="l">Tier</th><th>Guesty base</th><th>Airbnb base</th><th>Filed base</th><th>City tax</th><th>Deposit</th><th class="l">Note</th><th class="l">Flags</th></tr></thead><tbody>${rowsHtml}</tbody></table>${boxes}</div></div>`;
+  }
+  document.getElementById('units').innerHTML=html;
+
+  // deposits panel
+  if(DEPOSITS.length){
+    document.getElementById('depPanel').classList.remove('hidden');
+    const total=r2(DEPOSITS.reduce((s,d)=>s+d.amt,0));
+    const matched=r2(DEPOSITS.filter(d=>d.assignedTo).reduce((s,d)=>s+d.amt,0));
+    document.getElementById('depControl').innerHTML=[
+      ['Total Airbnb deposits',money(total)],['Matched to reservations',money(matched)],['Unassigned',money(r2(total-matched)),r2(total-matched)>0.01?'flag':'']
+    ].map(([l,n,c])=>`<div class="kpi ${c||''}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    const opts=r=>`<option value="">— assign —</option>`+RES.map(x=>`<option value="${x.conf}"${r.assignedTo===x.conf?' selected':''}>${x.unitCode} · ${x.guest} (${money(x.payout)})</option>`).join('')+`<option value="OTHER"${r.assignedTo==='OTHER'?' selected':''}>Prior month / other</option>`;
+    const status=d=>d.assignedTo&&!d.suggested?'<span class="matched">✓ matched</span>':d.suggested?'<span style="color:var(--warn);font-weight:600">~ suggested</span>':'<span class="unmatched">— review</span>';
+    document.getElementById('depTable').innerHTML=`<thead><tr><th class="l">Date</th><th class="l">Ref</th><th class="l">Channel</th><th>Amount</th><th class="l">Status</th><th class="l">Assigned to</th><th class="l">Why</th></tr></thead><tbody>`+
+      DEPOSITS.map((d,i)=>`<tr><td class="l">${d.date}</td><td class="l">${d.ref}</td><td class="l">${d.channel||'—'}</td><td>${money(d.amt)}</td><td class="l">${status(d)}</td><td class="l"><select class="assign" data-i="${i}">${opts(d)}</select></td><td class="l note">${d.hint||''}</td></tr>`).join('')+`</tbody>`;
+  }
+  // expenses
+  if(EXPENSES.length){
+    document.getElementById('expPanel').classList.remove('hidden');
+    document.getElementById('expTable').innerHTML=`<thead><tr><th class="l">Date</th><th class="l">Payee</th><th class="l">Category</th><th>Amount</th></tr></thead><tbody>`+
+      EXPENSES.map(e=>`<tr><td class="l">${e.date}</td><td class="l">${e.payee}</td><td class="l">${e.cat}</td><td>${money(e.amt)}</td></tr>`).join('')+`</tbody>`;
+  }
+
+  // wire events
+  document.querySelectorAll('input.base').forEach(el=>el.addEventListener('change',e=>{const i=+e.target.dataset.idx;RES[i].filedBase=r2(numify(e.target.value));RES[i].reviewed=true;render();}));
+  document.querySelectorAll('.mini').forEach(el=>el.addEventListener('click',e=>{const i=+e.target.dataset.idx;RES[i].filedBase=e.target.dataset.set==='g'?RES[i].gross:RES[i].airbnbBase;RES[i].reviewed=true;render();}));
+  document.querySelectorAll('input.note').forEach(el=>el.addEventListener('change',e=>{RES[+e.target.dataset.idx].note=e.target.value;}));
+  document.querySelectorAll('button[data-unit]').forEach(b=>b.addEventListener('click',e=>downloadUnit(decodeURIComponent(e.target.dataset.unit))));
+  document.querySelectorAll('select.assign').forEach(s=>s.addEventListener('change',e=>{const d=DEPOSITS[+e.target.dataset.i];d.assignedTo=e.target.value||null;d.suggested=false;d.hint=d.assignedTo?'confirmed by you':d.hint;render();}));
+}
+
+/* ---------- Excel ---------- */
+function unitSheetAoa(code,list){
+  const name=list[0].unitName||'',fm=list[0].filingMonth;
+  const aoa=[['La Quinta TOT Booking Report'],['Unit',code],['Property',name],['Filing period',fm],[],
+    ['Guest','Confirmation','Check-in','Check-out','Nights','Tier','Accommodation','Cleaning','Pet','Guesty base','Airbnb base','Filed base','TOT 10%','TBID 1%','Total tax','Note']];
+  list.forEach(r=>{const t=taxOf(r);aoa.push([r.guest,r.conf,r.ci?r.ci.toLocaleDateString('en-US'):'',r.co?r.co.toLocaleDateString('en-US'):'',r.nights,tierLabel(r.tier),r.accom,r.clean,r.pet,r.gross,r.airbnbBase,r.tier==='exempt'?0:r.filedBase,t.tot,t.tbid,t.total,r.note||'']);});
+  aoa.push([],['FILING SUMMARY (enter on MuniRevs)']);
+  for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
+    const tier=key.split('||')[1];
+    const form=tier==='full'?'Standard TOT form (11%)':tier==='tot'?'Separate TOT-only form':'Zero return (0 on lines 1-3)';
+    const count=tier==='exempt'?0:g.length,nights=tier==='exempt'?0:g.reduce((s,r)=>s+r.nights,0),base=tier==='exempt'?0:r2(g.reduce((s,r)=>s+r.filedBase,0));
+    const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});
+    aoa.push([form],['  Line 1 Reservations',count],['  Line 2 Nights',nights],['  Line 3 Rent collected',base],['  TOT (10%)',r2(tt.tot)],['  TBID (1%)',r2(tt.tbid)],['  Total due',r2(tt.total)],[]);
+  }
+  return aoa;
+}
+const safeName=s=>s.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31)||'Unit';
+function downloadUnit(code){const list=RES.filter(r=>r.unitCode===code);if(!list.length)return;const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));XLSX.writeFile(wb,`${code} ${list[0].filingMonth} TOT Report.xlsx`.replace(/\s+/g,'_'));}
+function downloadMaster(){
+  const wb=XLSX.utils.book_new();
+  const sum=[['La Quinta TOT — Master Summary'],['Generated',new Date().toLocaleString('en-US')],[],
+    ['Unit','Property','Period','Reservations','Nights','Rent collected','TOT','TBID','Total due','Filing type']];
+  let gT=0;
+  for(const [code,list] of groupBy(RES,r=>r.unitCode))for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
+    const tier=key.split('||')[1],fm=key.split('||')[0];
+    const count=tier==='exempt'?0:g.length,nights=tier==='exempt'?0:g.reduce((s,r)=>s+r.nights,0),base=tier==='exempt'?0:r2(g.reduce((s,r)=>s+r.filedBase,0));
+    const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});gT+=r2(tt.total);
+    sum.push([code,list[0].unitName||'',fm,count,nights,base,r2(tt.tot),r2(tt.tbid),r2(tt.total),tier==='full'?'Standard 11%':tier==='tot'?'TOT-only form':'Zero return']);
+  }
+  sum.push([],['','','','','','','','','TOTAL',r2(gT)]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),'Summary');
+  for(const [code,list] of groupBy(RES,r=>r.unitCode))XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));
+  if(DEPOSITS.length){const d=[['Airbnb deposits'],['Date','Ref','Amount','Assigned to']];DEPOSITS.forEach(x=>{const r=RES.find(y=>y.conf===x.assignedTo);d.push([x.date,x.ref,x.amt,x.assignedTo==='OTHER'?'Prior month / other':r?r.unitCode+' '+r.guest:'unassigned']);});XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(d),'Deposits');}
+  XLSX.writeFile(wb,`LaQuinta_TOT_Master_${RES[0]?RES[0].filingMonth.replace(/\s+/g,'_'):'export'}.xlsx`);
+}
+
+/* ---------- file handling ---------- */
+function showResults(){document.getElementById('results').classList.remove('hidden');render();document.getElementById('results').scrollIntoView({behavior:'smooth'});}
+function handleCsv(file){
+  document.getElementById('err').textContent='';
+  Papa.parse(file,{header:true,skipEmptyLines:true,complete:res=>{
+    try{RES=buildRes(res.data);if(!RES.length){document.getElementById('err').textContent='No reservations found — is this the Guesty all-listings export?';return;}
+      if(DEPOSITS.length)autoMatchDeposits();
+      document.getElementById('dropCsv').classList.add('done');showResults();
+    }catch(e){document.getElementById('err').textContent='CSV error: '+e.message;}
+  }});
+}
+async function pdfToLines(buf){
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;const lines=[];
+  for(let p=1;p<=pdf.numPages;p++){const tc=await (await pdf.getPage(p)).getTextContent();const rows={};
+    tc.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});
+    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{const l=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim();if(l)lines.push(l);});}
+  return lines;
+}
+function parseBank(text){
+  DEPOSITS=[];EXPENSES=[];
+  const re=/(\d{1,2}\/\d{1,2})\s+Funds Received\s+DIRECT DEP FUNDS RECVD\s+([A-Z0-9]{8,14})\s+\$?([\d,]+\.\d{2})/g;let m;
+  while((m=re.exec(text)))DEPOSITS.push({date:m[1],ref:m[2],amt:parseFloat(m[3].replace(/,/g,'')),channel:'Airbnb',assignedTo:null});
+  // provisional VRBO / HomeAway / Expedia payout lines (refine once a real VRBO deposit is seen)
+  const rv=/(\d{1,2}\/\d{1,2})\s+Funds Received[^\n]*?(VRBO|HOMEAWAY|EXPEDIA)[^\n]*?([A-Z0-9]{6,14})?\s+\$?([\d,]+\.\d{2})/gi;let v;
+  while((v=rv.exec(text)))DEPOSITS.push({date:v[1],ref:v[3]||'vrbo',amt:parseFloat(v[4].replace(/,/g,'')),channel:'VRBO',assignedTo:null});
+  const push=(rx,cat,payee)=>{let x;const r=new RegExp(rx,'g');while((x=r.exec(text)))EXPENSES.push({date:x[1],payee,cat,amt:parseFloat(x[2].replace(/,/g,''))});};
+  push('(\\d{1,2}\\/\\d{1,2})\\s+Debit Card\\s+TURNO[^\\(]*\\(([\\d,]+\\.\\d{2})\\)','Cleaning (Turno)','Turno');
+  push('(\\d{1,2}\\/\\d{1,2})\\s+Debit Card\\s+GUESTY[^\\(]*\\(([\\d,]+\\.\\d{2})\\)','PMS software (Guesty)','Guesty');
+  push('(\\d{1,2}\\/\\d{1,2})\\s+Automated Payment\\s+City of La Quint[^\\(]*\\(([\\d,]+\\.\\d{2})\\)','La Quinta TOT payment','City of La Quinta');
+  let x;const rt=/(\d{1,2}\/\d{1,2})\s+Online Transfer\s+(?:FUNDS TRANSFERRED|ACH TRANSFER OUTGOING)[^\(]*\(([\d,]+\.\d{2})\)/g;
+  while((x=rt.exec(text)))EXPENSES.push({date:x[1],payee:'Outgoing transfer',cat:'Owner distribution / transfer',amt:parseFloat(x[2].replace(/,/g,''))});
+}
+async function handlePdf(file){
+  document.getElementById('err').textContent='';
+  try{const buf=await file.arrayBuffer();const lines=await pdfToLines(buf);parseBank(lines.join('\n'));
+    if(!DEPOSITS.length){document.getElementById('err').textContent='No Airbnb deposits detected in that PDF. You can add them manually below once a CSV is loaded.';}
+    if(RES.length)autoMatchDeposits();
+    document.getElementById('dropPdf').classList.add('done');
+    if(RES.length)showResults();
+  }catch(e){document.getElementById('err').textContent='PDF error: '+e.message;}
+}
+function wireDrop(dropId,inputId,handler,accept){
+  const drop=document.getElementById(dropId),inp=document.getElementById(inputId);
+  drop.addEventListener('click',()=>inp.click());
+  inp.addEventListener('change',e=>{if(e.target.files[0])handler(e.target.files[0]);});
+  ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+  drop.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handler(e.dataTransfer.files[0]);});
+}
+wireDrop('dropCsv','fileCsv',handleCsv);wireDrop('dropPdf','filePdf',handlePdf);
+document.getElementById('dlMaster').addEventListener('click',downloadMaster);
+document.getElementById('addDep').addEventListener('click',()=>{const dt=prompt('Deposit date (e.g. 6/15)?')||'';const am=numify(prompt('Amount?'));if(am){DEPOSITS.push({date:dt,ref:'manual',amt:r2(am),channel:'—',assignedTo:null});autoMatchDeposits();render();}});
+</script>
+</body>
+</html>
