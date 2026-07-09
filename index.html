@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.8.8</title>
+<title>La Quinta TOT Tool — v0.8.9</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -134,15 +134,15 @@
   .ah-tg{font-size:11.5px;color:#cfe0ee}
   .ah-month{font-size:13px;font-weight:700;background:#fff;color:var(--navy);border-radius:8px;padding:7px 12px}
   .ah-steps{display:flex;padding:18px 14px 14px;gap:0;overflow-x:auto}
-  .step{flex:1;min-width:80px;display:flex;flex-direction:column;align-items:center;position:relative;text-align:center;cursor:pointer}
-  .step .dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;z-index:2;border:2px solid #e2e6ea;background:#fff;color:var(--muted);transition:.15s}
-  .step.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
-  .step.cur .dot{background:var(--gold);border-color:var(--gold);color:#fff;box-shadow:0 0 0 4px rgba(194,162,95,.25)}
-  .step .cap{font-size:10.5px;margin-top:7px;color:var(--muted);line-height:1.2;max-width:90px}
-  .step.done .cap,.step.cur .cap{color:var(--ink);font-weight:600}
-  .step:not(:first-child)::before{content:"";position:absolute;top:15px;left:-50%;width:100%;height:3px;background:#e2e6ea;z-index:1}
-  .step.done::before,.step.cur::before{background:var(--ok)}
-  .step:hover .dot{border-color:var(--navy)}
+  #stepper .step{flex:1;min-width:80px;display:flex;flex-direction:column;align-items:center;position:relative;text-align:center;cursor:pointer}
+  #stepper .dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;z-index:2;border:2px solid #e2e6ea;background:#fff;color:var(--muted);transition:.15s}
+  #stepper .step.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+  #stepper .step.cur .dot{background:var(--gold);border-color:var(--gold);color:#fff;box-shadow:0 0 0 4px rgba(194,162,95,.25)}
+  #stepper .cap{font-size:10.5px;margin-top:7px;color:var(--muted);line-height:1.2;max-width:90px}
+  #stepper .step.done .cap,#stepper .step.cur .cap{color:var(--ink);font-weight:600}
+  #stepper .step:not(:first-child)::before{content:"";position:absolute;top:15px;left:-50%;width:100%;height:3px;background:#e2e6ea;z-index:1}
+  #stepper .step.done::before,#stepper .step.cur::before{background:var(--ok)}
+  #stepper .step:hover .dot{border-color:var(--navy)}
   .navdiv{height:1px;background:var(--line);margin:8px 8px}
   .navlabel{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#a2abb8;padding:4px 12px}
   .navitem.step .sn{width:20px;height:20px;border-radius:50%;background:var(--cream);color:var(--navy);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 20px}
@@ -337,7 +337,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.8.8 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.8.9 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
