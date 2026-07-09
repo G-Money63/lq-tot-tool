@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.8.4</title>
+<title>La Quinta TOT Tool — v0.8.5</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -266,7 +266,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.8.4 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.8.5 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -418,7 +418,7 @@ function renderOwnerSetup(){
         ${c.manual?`<button class="mini rem lstdel" data-u="${u}" style="margin-top:6px;margin-left:6px">✕ Remove listing</button>`:''}
       </div></div>`;}).join('');
   document.getElementById('ownerSetupTable').outerHTML='<div id="ownerSetupTable">'+
-    '<div class="toolbar"><label class="btn sm ghost" style="cursor:pointer">⬆ Import owners CSV<input id="ownImp" type="file" accept=".csv" class="hidden"></label><button class="btn sm" id="addListingBtn_setup">＋ Add new listing</button><span id="ownImpStamp" class="note"></span></div>'+addListingFormHtml('setup')+body+'</div>';
+    '<div class="toolbar"><label class="btn sm ghost" style="cursor:pointer">⬆ Import owners CSV<input id="ownImp" type="file" accept=".csv" class="hidden"></label><button class="btn sm" id="addListingBtn_setup">＋ Add new owner</button><span class="note">Adds a new owner and their unit.</span><span id="ownImpStamp" class="note"></span></div>'+addListingFormHtml('setup')+body+'</div>';
   const imp=document.getElementById('ownImp');if(imp)imp.addEventListener('change',e=>{if(e.target.files[0])importOwnersCsv(e.target.files[0]);});
   document.querySelectorAll('.ucfg').forEach(el=>el.addEventListener('change',e=>{const c=unitCfg(e.target.dataset.u);c[e.target.dataset.f]=+e.target.value||0;saveOwners();renderOwnerReports();}));
   document.querySelectorAll('.oown').forEach(el=>el.addEventListener('change',e=>{const c=unitCfg(e.target.dataset.u),o=c.owners[+e.target.dataset.oi],f=e.target.dataset.f;o[f]=f==='share'?(+e.target.value||0):e.target.value;saveOwners();renderOwnerSetup();renderOwnerReports();}));
@@ -464,10 +464,12 @@ table{width:100%;border-collapse:collapse}.bk td{padding:6px 2px;font-size:13.5p
 .foot{margin-top:18px;padding-top:12px;border-top:1px solid #e8e1d3;font-size:11.5px;color:#8a847a;line-height:1.6}.foot b{color:#3f5d7a}
 @media print{body{background:#fff;padding:0}.sheet{border:none;margin:0}}`;
 function monthDays(fm){const p=(fm||'').split(' ');const mi=MONTHS.indexOf(p[0]);const yr=+p[1]||new Date().getFullYear();return mi>=0?new Date(yr,mi+1,0).getDate():30;}
+function monthRange(fm){const p=(fm||'').split(' ');const mi=MONTHS.indexOf(p[0]);const yr=+p[1]||new Date().getFullYear();if(mi<0)return null;return {start:new Date(yr,mi,1),end:new Date(yr,mi+1,1)};}
+function nightsInMonth(r,fm){const mr=monthRange(fm);if(!mr||!r.ci||!r.co)return r.nights||0;const s=Math.max(r.ci,mr.start),e=Math.min(r.co,mr.end);return Math.max(0,Math.round((e-s)/86400000));}
 function statementSheet(u){
   const o=computeOwner(u);const rs=o.rs.slice().sort((a,b)=>(a.ci&&b.ci?a.ci-b.ci:0));
   const bn=rs.reduce((s,r)=>s+r.nights,0);const accom=r2(rs.reduce((s,r)=>s+r.accom,0));const clean=r2(rs.reduce((s,r)=>s+r.clean,0));const pet=r2(rs.reduce((s,r)=>s+r.pet,0));
-  const fm=rs[0]?rs[0].filingMonth:CURMONTH;const days=monthDays(fm);const occ=days?Math.round(bn/days*100):0;const adr=bn?r2(accom/bn):0;
+  const fm=rs[0]?rs[0].filingMonth:CURMONTH;const days=monthDays(fm);const occNights=rs.reduce((s,r)=>s+nightsInMonth(r,fm),0);const occ=days?Math.min(100,Math.round(occNights/days*100)):0;const adr=bn?r2(accom/bn):0;
   const names=o.owners.map(x=>x.name).filter(Boolean).join(', ')||(unitDisplayName(u)||u);
   const bkRows=rs.map(r=>`<tr><td>${r.guest} · ${r.ci?r.ci.toLocaleDateString('en-US'):''}–${r.co?r.co.toLocaleDateString('en-US'):''}</td><td class="c">${r.nights}</td><td class="r">${money(r.accom)}</td></tr>`).join('');
   const other=[clean>0?`<div class="row"><span>Cleaning fees</span><span>${money(clean)}</span></div>`:'',pet>0?`<div class="row"><span>Pet fees</span><span>${money(pet)}</span></div>`:''].join('');
