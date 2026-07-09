@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.8.5</title>
+<title>La Quinta TOT Tool — v0.8.6</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -109,6 +109,7 @@
   .fld label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
   .newpill{display:inline-block;font-size:10px;font-weight:700;background:var(--okbg);color:var(--ok);padding:1px 7px;border-radius:20px;margin-left:6px}
   .mini.rem{border-color:#c98;color:var(--bad)}
+  .feesPanel{background:#f7fafc;border-top:1px solid var(--line);padding:10px 14px;font-size:13px;color:var(--muted)}
   /* v0.8.4 — instructions guide */
   .guide .gphase{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;background:#fbfcfe}
   .guide .gph-title{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:14px}
@@ -266,7 +267,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.8.5 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.8.6 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -409,10 +410,11 @@ function renderOwnerSetup(){
     const summ=(c.owners||[]).map(o=>o.name).filter(Boolean).join(', ')||'no owners';
     const dn=unitDisplayName(u);
     return `<div class="ocard${open?'':' collapsed'}"><div class="ohead">
-        <div class="otoggle" data-u="${u}" style="cursor:pointer;display:flex;align-items:center;gap:8px"><i class="ti ti-chevron-${open?'down':'right'}"></i><b>${u}</b>${dn?` <span class="sub">${dn}</span>`:''}${c.manual?' <span class="newpill">added manually</span>':''}${open?(booked?'':' <span class="sub">(no bookings)</span>'):` <span class="sub">${summ}</span>`}</div>
-        <div class="sub">Mgmt <input class="oset onum ucfg" data-u="${u}" data-f="mgmt" type="number" step="0.5" value="${c.mgmt}" style="width:54px">%
-          · PMS $<input class="oset onum ucfg" data-u="${u}" data-f="pms" type="number" value="${c.pms}" style="width:54px">
-          · Pricing $<input class="oset onum ucfg" data-u="${u}" data-f="pricing" type="number" value="${c.pricing}" style="width:54px"></div></div>
+        <div class="otoggle" data-u="${u}" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><i class="ti ti-chevron-${open?'down':'right'}"></i><b>${u}</b>${dn?` <span class="sub">${dn}</span>`:''}${c.manual?' <span class="newpill">added manually</span>':''}${open?(booked?'':' <span class="sub">(no bookings)</span>'):` <span class="sub">${summ}</span>`}</div>
+        <button class="mini feesBtn" data-u="${u}">⚙ Fees</button></div>
+      <div class="feesPanel hidden"><span class="note" style="margin-right:6px">Fees:</span>Mgmt <input class="oset onum ucfg" data-u="${u}" data-f="mgmt" type="number" step="0.5" value="${c.mgmt}" style="width:54px">%
+          &nbsp;·&nbsp; PMS $<input class="oset onum ucfg" data-u="${u}" data-f="pms" type="number" value="${c.pms}" style="width:54px">
+          &nbsp;·&nbsp; Pricing $<input class="oset onum ucfg" data-u="${u}" data-f="pricing" type="number" value="${c.pricing}" style="width:54px"></div>
       <div class="obody">${ownerRows||'<div class="note">No owners yet.</div>'}
         <button class="mini oadd" data-u="${u}" style="margin-top:6px">＋ owner</button>
         ${c.manual?`<button class="mini rem lstdel" data-u="${u}" style="margin-top:6px;margin-left:6px">✕ Remove listing</button>`:''}
@@ -426,6 +428,7 @@ function renderOwnerSetup(){
   document.querySelectorAll('.odel').forEach(el=>el.addEventListener('click',e=>{const c=unitCfg(e.target.dataset.u);c.owners.splice(+e.target.dataset.oi,1);saveOwners();renderOwnerSetup();renderOwnerReports();}));
   document.querySelectorAll('.otoggle').forEach(el=>el.addEventListener('click',e=>{const u=e.currentTarget.dataset.u;OSET_OPEN.has(u)?OSET_OPEN.delete(u):OSET_OPEN.add(u);renderOwnerSetup();}));
   document.querySelectorAll('.lstdel').forEach(el=>el.addEventListener('click',e=>removeListing(e.currentTarget.dataset.u)));
+  document.querySelectorAll('.feesBtn').forEach(el=>el.addEventListener('click',e=>{const card=e.currentTarget.closest('.ocard');const p=card&&card.querySelector('.feesPanel');if(p)p.classList.toggle('hidden');}));
   wireAddListing('setup');
 }
 function renderOwnerExp(){
