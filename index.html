@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.8.9</title>
+<title>La Quinta TOT Tool — v0.9.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -161,6 +161,10 @@
   .ckbox{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
   .ckbox input{width:16px;height:16px;accent-color:var(--ok);cursor:pointer}
   .ckspacer{margin-left:auto}
+  .kpi.clickable{cursor:pointer;transition:.12s}
+  .kpi.clickable:hover{border-color:var(--navy);box-shadow:0 2px 8px rgba(63,93,122,.15)}
+  .kpi .kpi-go{color:var(--navy);font-weight:700}
+  .navbadge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;min-width:19px;height:19px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;flex:0 0 auto}
 </style>
 </head>
 <body>
@@ -337,7 +341,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.8.9 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.9.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -699,8 +703,9 @@ function render(){
   const needReview=RES.filter(r=>!r.reviewed).length;
   document.getElementById('kpis').innerHTML=[
     ['Units',units],['Reservations',RES.length],['Total tax due',money(cityTax)],
-    ['Needs review',needReview,needReview?'flag':''],['Exempt',RES.filter(r=>r.tier==='exempt').length],['TOT-only',RES.filter(r=>r.tier==='tot').length]
-  ].map(([l,n,c])=>`<div class="kpi ${c||''}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    ['Needs review',needReview,needReview?'flag':'','citytax'],['Exempt',RES.filter(r=>r.tier==='exempt').length],['TOT-only',RES.filter(r=>r.tier==='tot').length]
+  ].map(([l,n,c,jump])=>`<div class="kpi ${c||''} ${jump?'clickable':''}" ${jump?`data-jump="${jump}"`:''}><div class="n">${n}</div><div class="l">${l}${jump?' <span class="kpi-go">→</span>':''}</div></div>`).join('');
+  document.querySelectorAll('.kpi.clickable').forEach(k=>k.addEventListener('click',e=>setView(e.currentTarget.dataset.jump)));
 
   // reconciliation
   const recon=[];
@@ -914,7 +919,19 @@ function renderStepStrip(strip){
   strip.innerHTML=`<span class="st-lbl">Step ${n} · ${sd.short}</span><label class="st-toggle"><input type="checkbox" class="stepchk" ${done?'checked':''}> Mark this step complete</label>`;
   strip.querySelector('.stepchk').addEventListener('change',e=>{setStepDone(n,e.target.checked);refreshSteps();});
 }
-function refreshSteps(){document.querySelectorAll('.stepstrip').forEach(renderStepStrip);renderStepper();}
+function navIssueCount(view){
+  if(view==='citytax')return RES.filter(r=>!r.reviewed).length;
+  if(view==='revenue')return DEPOSITS.filter(d=>{const s=(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0);return Math.abs(s-d.amt)>=0.01;}).length;
+  return 0;
+}
+function renderNavBadges(){
+  document.querySelectorAll('.navitem.step').forEach(n=>{
+    let b=n.querySelector('.navbadge');const c=navIssueCount(n.dataset.view);
+    if(c>0){if(!b){b=document.createElement('span');b.className='navbadge';n.appendChild(b);}b.textContent=c;b.style.display='';}
+    else if(b){b.style.display='none';}
+  });
+}
+function refreshSteps(){document.querySelectorAll('.stepstrip').forEach(renderStepStrip);renderStepper();renderNavBadges();}
 /* reconciliation "Ready to file?" checks */
 function reconChecks(){
   let cityTax=0;RES.forEach(r=>cityTax+=taxOf(r).total);cityTax=r2(cityTax);
