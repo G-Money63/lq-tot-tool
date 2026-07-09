@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.8.6</title>
+<title>La Quinta TOT Tool — v0.8.7</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -267,7 +267,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.8.6 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.8.7 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -289,6 +289,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const RATE_TOT=0.10,RATE_TBID=0.01;
 let RES=[],DEPOSITS=[],EXPENSES=[],LASTROWS=null;
+let DEP_OPEN=new Set();
 const LS_RES='lqtot_res_v1',LS_DEP='lqtot_dep_v1';
 function lget(k){try{return JSON.parse(localStorage.getItem(k)||'{}');}catch(e){return {};}}
 function lset(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}}
@@ -395,8 +396,7 @@ function computeOwner(u){
     manOwnerList:exp.filter(e=>e.paidBy==='owner'),manMgmtList:exp.filter(e=>e.paidBy==='mgmt'),
     mgmtCharged,distribution,ownerPaid,ownerNet,longTerm,covShort,received,owners,perOwner,shareTot};
 }
-let OSET_OPEN=new Set();
-function renderOwnerSetup(){
+let OSET_OPEN=new Set();function renderOwnerSetup(){
   document.getElementById('ownerSetupPanel').classList.remove('hidden');
   const se=document.getElementById('setEmpty');if(se)se.classList.add('hidden');
   const units=allUnits();
@@ -663,7 +663,7 @@ function render(){
         <td class="note" style="text-align:right">G ${money(r.gross)}<br>A ${r.airbnbBase?money(r.airbnbBase):'—'}</td>
         <td>${r.tier==='exempt'?'—':`<input class="base" type="number" step="0.01" value="${r.filedBase.toFixed(2)}" data-idx="${idx}">${r.disc?`<div class="pick"><button class="mini" data-set="g" data-idx="${idx}">G</button><button class="mini" data-set="a" data-idx="${idx}">A</button></div>`:''}`}</td>
         <td>${money(t.total)}</td>
-        <td class="l">${flags.join(' ')||'<span class="badge b-full">ok</span>'}${depTxt?'<div style="margin-top:2px">'+depTxt+'</div>':''}<div style="margin-top:4px"><input class="note" type="text" placeholder="note…" value="${(r.note||'').replace(/"/g,'&quot;')}" data-idx="${idx}" style="width:120px"></div></td>
+        <td class="l">${flags.join(' ')||'<span class="badge b-full">ok</span>'}${!r.reviewed?` <button class="mini ctok" data-idx="${idx}" style="border-color:var(--ok);color:var(--ok)">✓ OK</button>`:''}${depTxt?'<div style="margin-top:2px">'+depTxt+'</div>':''}<div style="margin-top:4px"><input class="note" type="text" placeholder="note…" value="${(r.note||'').replace(/"/g,'&quot;')}" data-idx="${idx}" style="width:120px"></div></td>
       </tr>`;}).join('');
     let boxes='';
     for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
@@ -709,6 +709,15 @@ function render(){
     document.getElementById('depTable').innerHTML=`<thead><tr><th class="l">Deposit</th><th>Amount</th><th class="l">Status</th><th class="l">Allocation(s)</th></tr></thead><tbody>`+
       DEPOSITS.map((d,i)=>{
         const s=(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0);
+        const key=depKey(d);
+        const isDone=!d.suggested&&(d.allocs||[]).length>0&&Math.abs(s-d.amt)<0.01;
+        const collapsed=isDone&&!DEP_OPEN.has(key);
+        if(collapsed){
+          const summ=(d.allocs||[]).map(a=>{const r=RES.find(x=>x.conf===a.conf);return a.conf?(r?`${r.unitCode} · ${r.guest}`:a.conf):(a.custom||'other');}).join(', ');
+          return `<tr><td class="l" style="white-space:normal"><b>${d.date}</b><div class="note">${d.ref}</div></td>
+            <td>${money(d.amt)}</td><td class="l">${status(d)}</td>
+            <td class="l"><span class="note">→ ${summ||'matched'}</span> <button class="mini depedit" data-i="${i}">Edit</button></td></tr>`;
+        }
         const rows=(d.allocs||[]).map((a,ai)=>`<div class="allocrow">
           <select class="atgt" data-di="${i}" data-ai="${ai}">${tgtOpts(a)}</select>
           ${(!a.conf&&typeof a.custom==='string')?`<input class="acustom" data-di="${i}" data-ai="${ai}" placeholder="guest · unit" value="${(a.custom||'').replace(/"/g,'&quot;')}">`:''}
@@ -718,9 +727,11 @@ function render(){
         const remaining=r2(d.amt-s);
         const remTxt=Math.abs(remaining)<0.01?' ✓':remaining>0?` · <b>remaining ${money(remaining)}</b>`:` · <b style="color:var(--bad)">over by ${money(-remaining)}</b>`;
         const balNotes=(d.allocs||[]).filter(a=>a.conf).map(a=>{const r=RES.find(x=>x.conf===a.conf);if(!r)return '';const bal=r2(r.payout-covered(r.conf));return bal>0.5?`<div class="note" style="color:var(--info)">↳ ${r.guest}: ${money(bal)} still expected from Airbnb (future payment)</div>`:'';}).filter(Boolean).join('');
+        const okBtn=d.suggested?`<button class="mini depok" data-i="${i}" style="border-color:var(--ok);color:var(--ok)">✓ OK, confirm</button> `:'';
+        const collapseBtn=isDone?`<button class="mini depcollapse" data-i="${i}">▲ collapse</button> `:'';
         return `<tr><td class="l" style="white-space:normal"><b>${d.date}</b><div class="note">${d.ref}</div><div class="note">${d.channel||''}</div></td>
           <td>${money(d.amt)}</td><td class="l">${status(d)}</td>
-          <td class="l">${rows}<div style="margin-top:4px"><button class="mini aadd" data-di="${i}">＋ split</button> <span class="note ${sumc}">allocated ${money(s)} of ${money(d.amt)}${remTxt}</span></div>${balNotes}${d.hint?`<div class="note">${d.hint}</div>`:''}</td></tr>`;
+          <td class="l">${rows}<div style="margin-top:4px">${okBtn}${collapseBtn}<button class="mini aadd" data-di="${i}">＋ split</button> <span class="note ${sumc}">allocated ${money(s)} of ${money(d.amt)}${remTxt}</span></div>${balNotes}${d.hint?`<div class="note">${d.hint}</div>`:''}</td></tr>`;
       }).join('')+`</tbody>`;
   }
   // expenses
@@ -732,7 +743,11 @@ function render(){
 
   // wire events
   document.querySelectorAll('input.base').forEach(el=>el.addEventListener('change',e=>{const i=+e.target.dataset.idx;RES[i].filedBase=r2(numify(e.target.value));RES[i].reviewed=true;saveState();render();}));
-  document.querySelectorAll('.mini').forEach(el=>el.addEventListener('click',e=>{const i=+e.target.dataset.idx;RES[i].filedBase=e.target.dataset.set==='g'?RES[i].gross:RES[i].airbnbBase;RES[i].reviewed=true;saveState();render();}));
+  document.querySelectorAll('.mini[data-set]').forEach(el=>el.addEventListener('click',e=>{const i=+e.currentTarget.dataset.idx;RES[i].filedBase=e.currentTarget.dataset.set==='g'?RES[i].gross:RES[i].airbnbBase;RES[i].reviewed=true;saveState();render();}));
+  document.querySelectorAll('.ctok').forEach(el=>el.addEventListener('click',e=>{RES[+e.currentTarget.dataset.idx].reviewed=true;saveState();render();}));
+  document.querySelectorAll('.depok').forEach(el=>el.addEventListener('click',e=>{DEPOSITS[+e.currentTarget.dataset.i].suggested=false;saveState();render();}));
+  document.querySelectorAll('.depedit').forEach(el=>el.addEventListener('click',e=>{DEP_OPEN.add(depKey(DEPOSITS[+e.currentTarget.dataset.i]));render();}));
+  document.querySelectorAll('.depcollapse').forEach(el=>el.addEventListener('click',e=>{DEP_OPEN.delete(depKey(DEPOSITS[+e.currentTarget.dataset.i]));render();}));
   document.querySelectorAll('input.note').forEach(el=>el.addEventListener('change',e=>{RES[+e.target.dataset.idx].note=e.target.value;saveState();}));
   document.querySelectorAll('button[data-unit]').forEach(b=>b.addEventListener('click',e=>downloadUnit(decodeURIComponent(e.target.dataset.unit))));
   document.querySelectorAll('select.atgt').forEach(el=>el.addEventListener('change',e=>{
@@ -806,6 +821,7 @@ function monthsStore(){try{return JSON.parse(localStorage.getItem(LS_MONTHS)||'{
 function curMonthName(){const c={};RES.forEach(r=>{c[r.filingMonth]=(c[r.filingMonth]||0)+1;});let b='',n=-1;Object.entries(c).forEach(([k,v])=>{if(v>n){n=v;b=k;}});return b||'Unsaved';}
 function saveMonth(){if(!RES.length)return;CURMONTH=curMonthName();const m=monthsStore();m[CURMONTH]={res:serRes(),deposits:DEPOSITS,savedAt:new Date().toISOString()};try{localStorage.setItem(LS_MONTHS,JSON.stringify(m));}catch(e){}populateMonths();}
 function loadMonth(name){const snap=monthsStore()[name];if(!snap)return;RES=hydRes(snap.res||[]);DEPOSITS=snap.deposits||[];CURMONTH=name;
+  applySavedRes();applySavedDep();
   document.getElementById('homeStatus').classList.remove('hidden');
   document.getElementById('dropCsv').classList.toggle('done',RES.length>0);document.getElementById('dropPdf').classList.toggle('done',DEPOSITS.length>0);
   document.getElementById('viewSub').textContent=name;render();populateMonths();updateDropStats();}
