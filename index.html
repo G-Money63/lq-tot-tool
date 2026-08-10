@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.15.1</title>
+<title>La Quinta TOT Tool — v0.16.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -337,7 +337,13 @@
     </section>
 
     <section class="view hidden" data-view="setup">
-      <div class="panel hidden" id="ownerSetupPanel"><h2>Owners and setup <span class="note">(saved on this browser)</span></h2><div style="overflow-x:auto"><table id="ownerSetupTable"></table></div></div>
+      <div class="panel hidden" id="ownerSetupPanel"><h2>Owners and setup <span class="note">(saved on this browser)</span></h2>
+      <div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:12px;background:#fbfcfe">
+        <span class="note" style="margin-right:6px">Signs the city forms:</span>
+        Print name <input id="sgName" placeholder="Gary Rubens" style="width:180px">
+        &nbsp;·&nbsp; Title <input id="sgTitle" placeholder="Manager" style="width:120px">
+        <div class="note" style="margin-top:4px">Appears on every No Rental Activity Certification.</div>
+      </div><div style="overflow-x:auto"><table id="ownerSetupTable"></table></div></div>
       <div class="panel" id="setEmpty"><div class="note">Load a month or import your owners CSV to begin.</div></div>
     </section>
 
@@ -345,7 +351,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.15.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.16.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -368,7 +374,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/p
 const RATE_TOT=0.10,RATE_TBID=0.01;
 let RES=[],DEPOSITS=[],EXPENSES=[],LASTROWS=null;
 let AIRBNB=null;let INQUIRIES=[];let EXCLUDED=[];
-const LS_EXCL='lqtot_excl_v1'; // {period, homes:[{name,key,gross,fees,total,tax}], sumTotal, reportTotal, sumTax}
+const LS_EXCL='lqtot_excl_v1';const LS_SIGNER='lqtot_signer_v1';
+function signer(){const o=lget(LS_SIGNER);return {name:o.name||'',title:o.title||'Manager'};} // {period, homes:[{name,key,gross,fees,total,tax}], sumTotal, reportTotal, sumTax}
 function normUnit(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
 let DEP_OPEN=new Set();
 const LS_RES='lqtot_res_v1',LS_DEP='lqtot_dep_v1';
@@ -479,6 +486,10 @@ function computeOwner(u){
 }
 let OSET_OPEN=new Set();function renderOwnerSetup(){
   document.getElementById('ownerSetupPanel').classList.remove('hidden');
+  const sg=signer(),sn=document.getElementById('sgName'),st=document.getElementById('sgTitle');
+  if(sn&&!sn.dataset.wired){sn.value=sg.name;st.value=sg.title;sn.dataset.wired='1';
+    const save=()=>{lset(LS_SIGNER,{name:sn.value.trim(),title:st.value.trim()||'Manager'});render();};
+    sn.addEventListener('change',save);st.addEventListener('change',save);}
   const se=document.getElementById('setEmpty');if(se)se.classList.add('hidden');
   const units=allUnits();
   const body=!units.length?'<div class="note">Load a Guesty CSV or import your owners file to begin.</div>':units.map(u=>{
@@ -492,10 +503,14 @@ let OSET_OPEN=new Set();function renderOwnerSetup(){
     const dn=unitDisplayName(u);
     return `<div class="ocard${open?'':' collapsed'}"><div class="ohead">
         <div class="otoggle" data-u="${u}" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><i class="ti ti-chevron-${open?'down':'right'}"></i><b>${u}</b>${dn?` <span class="sub">${dn}</span>`:''}${c.manual?' <span class="newpill">added manually</span>':''}${open?(booked?'':' <span class="sub">(no bookings)</span>'):` <span class="sub">${summ}</span>`}</div>
-        <button class="mini feesBtn" data-u="${u}">⚙ Fees</button></div>
+        <button class="mini feesBtn" data-u="${u}">⚙ Fees &amp; permit</button></div>
       <div class="feesPanel hidden"><span class="note" style="margin-right:6px">Fees:</span>Mgmt <input class="oset onum ucfg" data-u="${u}" data-f="mgmt" type="number" step="0.5" value="${c.mgmt}" style="width:54px">%
           &nbsp;·&nbsp; PMS $<input class="oset onum ucfg" data-u="${u}" data-f="pms" type="number" value="${c.pms}" style="width:54px">
-          &nbsp;·&nbsp; Pricing $<input class="oset onum ucfg" data-u="${u}" data-f="pricing" type="number" value="${c.pricing}" style="width:54px"></div>
+          &nbsp;·&nbsp; Pricing $<input class="oset onum ucfg" data-u="${u}" data-f="pricing" type="number" value="${c.pricing}" style="width:54px">
+        <div style="margin-top:8px"><span class="note" style="margin-right:6px">City filing:</span>
+          Property address <input class="oset ucfg" data-u="${u}" data-f="addr" value="${(c.addr||'').replace(/"/g,'&quot;')}" placeholder="50660 Santa Rosa Plaza Unit 5" style="width:260px">
+          &nbsp;·&nbsp; STVR permit no. <input class="oset ucfg" data-u="${u}" data-f="permit" value="${(c.permit||'').replace(/"/g,'&quot;')}" placeholder="260540" style="width:90px"></div>
+        <div class="note" style="margin-top:4px">Used on the No Rental Activity Certification and the city report header.</div></div>
       <div class="obody">${ownerRows||'<div class="note">No owners yet.</div>'}
         <button class="mini oadd" data-u="${u}" style="margin-top:6px">＋ owner</button>
         ${c.manual?`<button class="mini rem lstdel" data-u="${u}" style="margin-top:6px;margin-left:6px">✕ Remove listing</button>`:''}
@@ -503,7 +518,8 @@ let OSET_OPEN=new Set();function renderOwnerSetup(){
   document.getElementById('ownerSetupTable').outerHTML='<div id="ownerSetupTable">'+
     '<div class="toolbar"><label class="btn sm ghost" style="cursor:pointer">⬆ Import owners CSV<input id="ownImp" type="file" accept=".csv" class="hidden"></label><button class="btn sm" id="addListingBtn_setup">＋ Add new owner</button><span class="note">Adds a new owner and their unit.</span><span id="ownImpStamp" class="note"></span></div>'+addListingFormHtml('setup')+body+'</div>';
   const imp=document.getElementById('ownImp');if(imp)imp.addEventListener('change',e=>{if(e.target.files[0])importOwnersCsv(e.target.files[0]);});
-  document.querySelectorAll('.ucfg').forEach(el=>el.addEventListener('change',e=>{const c=unitCfg(e.target.dataset.u);c[e.target.dataset.f]=+e.target.value||0;saveOwners();renderOwnerReports();}));
+  document.querySelectorAll('.ucfg').forEach(el=>el.addEventListener('change',e=>{const c=unitCfg(e.target.dataset.u);const f=e.target.dataset.f;
+    c[f]=(f==='addr'||f==='permit')?e.target.value.trim():(+e.target.value||0);saveOwners();renderOwnerReports();render();}));
   document.querySelectorAll('.oown').forEach(el=>el.addEventListener('change',e=>{const c=unitCfg(e.target.dataset.u),o=c.owners[+e.target.dataset.oi],f=e.target.dataset.f;o[f]=f==='share'?(+e.target.value||0):e.target.value;saveOwners();renderOwnerSetup();renderOwnerReports();}));
   document.querySelectorAll('.oadd').forEach(el=>el.addEventListener('click',e=>{const c=unitCfg(e.target.dataset.u);c.owners.push({name:'',email:'',share:0});saveOwners();renderOwnerSetup();}));
   document.querySelectorAll('.odel').forEach(el=>el.addEventListener('click',e=>{const c=unitCfg(e.target.dataset.u);c.owners.splice(+e.target.dataset.oi,1);saveOwners();renderOwnerSetup();renderOwnerReports();}));
@@ -885,14 +901,21 @@ function render(){
     html+=`<div class="unit"><div class="uhead"><div><h3>No Rental Activity — ${idleUnits.length} unit(s)</h3>
       <div class="sub">Still must be filed. Submit the No Rental Activity certification, then enter zeros on the La Quinta form and check out at $0.</div></div>
       <button class="btn sm ghost" id="dlIdle">⬇ Download zero-return sheets</button></div>
-      <div class="ubody">${idleUnits.map(u=>`<div class="filebox ex"><div class="ttl">${u} — ${curMonthName()} — No Rental Activity</div><div class="lines">
+      <div class="ubody">${idleUnits.map(u=>{const c=unitCfg(u);const sg=signer();return `<div class="filebox ex"><div class="ttl">${u} — ${curMonthName()} — No Rental Activity</div>
+        <div class="note" style="margin:6px 0 8px;line-height:1.7">
+          <b>No Rental Activity Certification</b> — copy these into the city form:<br>
+          Month / Year: <b>${curMonthName().split(' ')[0]}</b> / <b>${curMonthName().split(' ')[1]}</b><br>
+          Property address: <b>${c.addr||'<span style="color:var(--bad)">not set — add it under Owners and setup</span>'}</b><br>
+          STVR permit no.: <b>${c.permit||'<span style="color:var(--bad)">not set — add it under Owners and setup</span>'}</b><br>
+          Print name: <b>${sg.name||'<span style="color:var(--bad)">not set</span>'}</b> &nbsp;·&nbsp; Title: <b>${sg.title}</b>
+        </div><div class="lines">
         <div><div class="lab">Reservations</div><div class="val">0</div></div>
         <div><div class="lab">Nights</div><div class="val">0</div></div>
         <div><div class="lab">Rent collected</div><div class="val">$0.00</div></div>
         <div><div class="lab">TOT (10%)</div><div class="val">$0.00</div></div>
         <div><div class="lab">TBID (1%)</div><div class="val">$0.00</div></div>
         <div><div class="lab">Total due</div><div class="val">$0.00</div></div></div>
-        <div class="note" style="margin-top:8px">Check out at $0.</div></div>`).join('')}</div></div>`;
+        <div class="note" style="margin-top:8px">Then enter zeros on the La Quinta form and check out at $0.</div></div>`;}).join('')}</div></div>`;
   }
   for(const [code,list] of groupBy(monthRes(),r=>r.unitCode)){
     const name=list[0].unitName||'';
@@ -1022,14 +1045,20 @@ function render(){
 function unitSheetAoa(code,list){
   list=list||[];const name=(list[0]&&list[0].unitName)||(unitCfg(code).name||'');
   const taxable=list.filter(r=>r.tier!=='exempt');
-  const aoa=[['La Quinta TOT Booking Report'],['Unit',code],['Property',name],['Filing period',curMonthName()],[],
+  const cfgU=unitCfg(code);
+  const aoa=[['La Quinta TOT Booking Report'],['Unit',code],['Property',name],['Property address',cfgU.addr||''],['STVR permit no.',cfgU.permit||''],['Filing period',curMonthName()],[],
     ['Guest','Confirmation','Check-in','Check-out','Nights','Rent collected','TOT 10%','TBID 1%','Total tax','Note']];
   taxable.forEach(r=>{const t=taxOf(r);aoa.push([r.guest,r.confRaw||r.conf,r.ci?r.ci.toLocaleDateString('en-US'):'',r.co?r.co.toLocaleDateString('en-US'):'',r.nights,r2(r.filedBase),t.tot,t.tbid,t.total,r.note||'']);});
   if(!taxable.length)aoa.push(['(no taxable rental activity this period)','','','','',0,0,0,0,'']);
   aoa.push([],['FILING SUMMARY (enter on MuniRevs)']);
   const byTier=groupBy(taxable,r=>r.tier);
   if(!taxable.length){
-    aoa.push(['No Rental Activity — submit the certification form, then enter zeros on the La Quinta form'],
+    const c=unitCfg(code),sg=signer();
+    aoa.push(['No Rental Activity Certification — fields for the city form'],
+      ['  TOT Remittance for',curMonthName().split(' ')[0]+' '+curMonthName().split(' ')[1]],
+      ['  Property address',c.addr||'(not set)'],['  STVR permit no.',c.permit||'(not set)'],
+      ['  Print name',sg.name||'(not set)'],['  Title',sg.title||'Manager'],[],
+      ['Then enter zeros on the La Quinta form'],
       ['  Line 1 Reservations',0],['  Line 2 Nights',0],['  Line 3 Rent collected',0],['  TOT (10%)',0],['  TBID (1%)',0],['  Total due',0],['  Check out at',0],[]);
   } else for(const [tier,g] of byTier){
     const form=tier==='full'?'Standard TOT form (11%)':'Non-TBID TOT form (10%, no TBID)';
