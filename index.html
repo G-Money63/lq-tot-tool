@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.9.0</title>
+<title>La Quinta TOT Tool — v0.10.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -341,7 +341,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.9.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.10.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -657,9 +657,9 @@ function buildRes(rows){
     out.push({unitCode,unitName,listing,conf:confCode,channel,
       guest:String(pick(row,['GUEST'])||'').trim(),ci,co,nights,tier,accom:r2(accom),clean:r2(clean),pet:r2(pet),
       gross,airbnbTax:r2(airbnbTax),airbnbBase,payout:r2(payout),
-      filedBase:tier==='exempt'?0:(airbnbTax?airbnbBase:gross),
+      filedBase:tier==='exempt'?0:gross,
       filingMonth:ci?(MONTHS[ci.getMonth()]+' '+ci.getFullYear()):'Unknown',
-      disc,reviewed:!disc,note:''});
+      disc,reviewed:true,note:''});
   });
   out.sort((a,b)=>a.unitCode.localeCompare(b.unitCode)||(a.ci&&b.ci?a.ci-b.ci:0));
   return out;
@@ -715,8 +715,8 @@ function render(){
     if(r.disc){const gd=r2(r.gross-r.airbnbBase);
       // is the delta a separate Airbnb deposit? (e.g. added pet fee)
       const petDep=DEPOSITS.find(x=>Math.abs(x.amt-gd)<2);
-      const hint=petDep?` A separate ${money(petDep.amt)} Airbnb deposit (${petDep.date}) matches this gap — likely an added fee that IS taxable, so the <strong>Guesty base ${money(r.gross)}</strong> is probably right.`:` If the stay was extended in Airbnb, the <strong>Airbnb base ${money(r.airbnbBase)}</strong> is the settled one; if a fee was added in Guesty, use Guesty.`;
-      recon.push({cls:'warnitem',html:`<strong>${r.unitCode} · ${r.guest}</strong> — Guesty base ${money(r.gross)} vs Airbnb base ${money(r.airbnbBase)} (Δ ${money(gd)}).${hint}`});}
+      const hint=petDep?` A separate ${money(petDep.amt)} Airbnb deposit (${petDep.date}) matches this gap — an added fee that IS taxable and is already inside the Guesty base.`:` Airbnb taxes its own gross, which includes amounts LQRM never receives, so a gap here is normal. Use the A button only if the stay was extended in Airbnb after Guesty synced.`;
+      recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — filing on Guesty base ${money(r.gross)}; Airbnb base was ${money(r.airbnbBase)} (Δ ${money(gd)}).${hint}`});}
     if(r.tier==='exempt')recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, <strong>exempt</strong>. Zero return (0 on lines 1–3). Reservation total ${money(r.gross)}; Airbnb bills long stays monthly, so use the month's deposit for owner revenue.`});
   });
   document.getElementById('recon').innerHTML=recon.length?recon.map(x=>`<div class="item ${x.cls}">${x.html}</div>`).join(''):'<div class="item okitem">Nothing to flag — every reservation reconciles cleanly.</div>';
