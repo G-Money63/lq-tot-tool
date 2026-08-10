@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.12.0</title>
+<title>La Quinta TOT Tool — v0.12.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -222,6 +222,7 @@
           <button class="btn sm ghost" id="expState">Backup my fixes</button>
           <label class="btn sm ghost" style="cursor:pointer">Restore<input id="impState" type="file" accept=".json" class="hidden"></label>
           <button class="btn sm ghost" id="clrState">Clear this month</button>
+          <button class="btn sm ghost" id="resetBases">Reset bases to current rules</button>
         </div>
         <div class="cards" id="kpis"></div>
       </div>
@@ -344,7 +345,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.12.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.12.1 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -373,10 +374,10 @@ const LS_RES='lqtot_res_v1',LS_DEP='lqtot_dep_v1';
 function lget(k){try{return JSON.parse(localStorage.getItem(k)||'{}');}catch(e){return {};}}
 function lset(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}}
 const depKey=d=>d.ref+'|'+d.amt.toFixed(2);
-function applySavedRes(){const s=lget(LS_RES);RES.forEach(r=>{const v=s[r.conf];if(v){if(typeof v.filedBase==='number')r.filedBase=v.filedBase;if(v.reviewed)r.reviewed=true;if(v.note)r.note=v.note;}});}
+function applySavedRes(){const s=lget(LS_RES);RES.forEach(r=>{const v=s[r.conf];if(v){if(v.edited&&typeof v.filedBase==='number'){r.filedBase=v.filedBase;r.edited=true;}if(v.reviewed)r.reviewed=true;if(v.note)r.note=v.note;}});}
 function applySavedDep(){const s=lget(LS_DEP);DEPOSITS.forEach(d=>{const v=s[depKey(d)];if(v&&v.allocs){d.allocs=v.allocs.map(a=>({conf:a.conf==null?null:a.conf,custom:a.custom===undefined?null:a.custom,amt:+a.amt||0}));d.suggested=false;d.hint='saved by you';}});}
 function saveState(){
-  const rs=lget(LS_RES);RES.forEach(r=>{if(r.reviewed||r.note)rs[r.conf]={filedBase:r.filedBase,reviewed:!!r.reviewed,note:r.note||''};});lset(LS_RES,rs);
+  const rs=lget(LS_RES);RES.forEach(r=>{if(r.edited||r.note)rs[r.conf]={filedBase:r.filedBase,edited:!!r.edited,reviewed:!!r.reviewed,note:r.note||''};});lset(LS_RES,rs);
   const ds=lget(LS_DEP);DEPOSITS.forEach(d=>{if(d.allocs&&d.allocs.length&&!d.suggested)ds[depKey(d)]={allocs:d.allocs};});lset(LS_DEP,ds);
   const el=document.getElementById('saveStamp');if(el)el.textContent='Saved ✓ '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
   saveMonth();
@@ -672,7 +673,7 @@ function buildRes(rows){
       gross,airbnbTax:r2(airbnbTax),airbnbBase,payout:r2(payout),commission:r2(commission),
       filedBase:tier==='exempt'?0:(airbnbBase||gross),
       filingMonth:ci?(MONTHS[ci.getMonth()]+' '+ci.getFullYear()):'Unknown',
-      disc,reviewed:true,note:''});
+      disc,reviewed:true,edited:false,note:''});
   });
   out.sort((a,b)=>a.unitCode.localeCompare(b.unitCode)||(a.ci&&b.ci?a.ci-b.ci:0));
   return out;
@@ -749,8 +750,9 @@ function render(){
     if(nAbsent)parts.push(`<strong>${nAbsent} listing(s)</strong> carrying <strong>${money(AX.absentPay)}</strong> of Airbnb payouts have no bookings in the Guesty export at all.`);
     const overs=AX.rows.filter(x=>x.status==='over');
     if(overs.length)parts.push(`On ${overs.map(x=>x.name).join(', ')}, Airbnb collected <strong>${money(r2(overs.reduce((a,b)=>a-b.gap,0)))}</strong> LESS tax than the rent implies &mdash; you still owe the city the full amount, so check those listings' tax settings in Airbnb.`);
+    const needExport=AX.shortfall>1||nAbsent;
     const verdict=parts.length
-      ? `<div class="item over" style="margin-top:12px"><strong>Do not file yet.</strong> ${parts.join(' ')} Re-run the Guesty export for the flagged listings.</div>`
+      ? `<div class="item over" style="margin-top:12px"><strong>Check before filing.</strong> ${parts.join(' ')}${needExport?' Re-run the Guesty export for the flagged listings.':''}</div>`
       : `<div class="item okitem" style="margin-top:12px"><strong>Airbnb slice reconciles.</strong> Every Airbnb listing matches within $1.</div>`;
     const html=`<div class="panel" style="padding:0;border:none;margin:0 0 14px">
       <h2>Airbnb cross-check &mdash; tax by listing</h2>
@@ -859,8 +861,8 @@ function render(){
   }
 
   // wire events
-  document.querySelectorAll('input.base').forEach(el=>el.addEventListener('change',e=>{const i=+e.target.dataset.idx;RES[i].filedBase=r2(numify(e.target.value));RES[i].reviewed=true;saveState();render();}));
-  document.querySelectorAll('.mini[data-set]').forEach(el=>el.addEventListener('click',e=>{const i=+e.currentTarget.dataset.idx;RES[i].filedBase=e.currentTarget.dataset.set==='g'?RES[i].gross:RES[i].airbnbBase;RES[i].reviewed=true;saveState();render();}));
+  document.querySelectorAll('input.base').forEach(el=>el.addEventListener('change',e=>{const i=+e.target.dataset.idx;RES[i].filedBase=r2(numify(e.target.value));RES[i].edited=true;RES[i].reviewed=true;saveState();render();}));
+  document.querySelectorAll('.mini[data-set]').forEach(el=>el.addEventListener('click',e=>{const i=+e.currentTarget.dataset.idx;RES[i].filedBase=e.currentTarget.dataset.set==='g'?RES[i].gross:RES[i].airbnbBase;RES[i].edited=true;RES[i].reviewed=true;saveState();render();}));
   document.querySelectorAll('.ctok').forEach(el=>el.addEventListener('click',e=>{RES[+e.currentTarget.dataset.idx].reviewed=true;saveState();render();}));
   document.querySelectorAll('.depok').forEach(el=>el.addEventListener('click',e=>{DEPOSITS[+e.currentTarget.dataset.i].suggested=false;saveState();render();}));
   document.querySelectorAll('.depedit').forEach(el=>el.addEventListener('click',e=>{DEP_OPEN.add(depKey(DEPOSITS[+e.currentTarget.dataset.i]));render();}));
@@ -1202,6 +1204,11 @@ function wireDrop(dropId,inputId,handler,accept){
   drop.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handler(e.dataTransfer.files[0]);});
 }
 wireDrop('dropCsv','fileCsv',handleCsv);wireDrop('dropPdf','filePdf',handlePdf);wireDrop('dropAir','fileAir',handleAir);
+(function(){const b=document.getElementById('resetBases');if(!b)return;b.addEventListener('click',()=>{
+  if(!confirm('Clear every hand-edited filed base and recompute from the current rules? Your notes and deposit allocations are kept.'))return;
+  const rs=lget(LS_RES);Object.keys(rs).forEach(k=>{delete rs[k].filedBase;rs[k].edited=false;});lset(LS_RES,rs);
+  RES.forEach(r=>{r.edited=false;r.filedBase=r.tier==='exempt'?0:(r.airbnbBase||r.gross);});
+  saveState();render();});})();
 document.querySelectorAll('.navitem').forEach(n=>n.addEventListener('click',()=>setView(n.dataset.view)));
 document.getElementById('newMonthBtn').addEventListener('click',newMonth);
 document.getElementById('monthSel').addEventListener('change',e=>{const v=e.target.value;if(v&&monthsStore()[v])loadMonth(v);});
