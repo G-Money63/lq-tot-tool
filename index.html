@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.11.0</title>
+<title>La Quinta TOT Tool — v0.12.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -344,7 +344,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.11.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.12.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -366,7 +366,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const RATE_TOT=0.10,RATE_TBID=0.01;
 let RES=[],DEPOSITS=[],EXPENSES=[],LASTROWS=null;
-let AIRBNB=null; // {period, homes:[{name,key,gross,fees,total,tax}], sumTotal, reportTotal, sumTax}
+let AIRBNB=null;let INQUIRIES=[]; // {period, homes:[{name,key,gross,fees,total,tax}], sumTotal, reportTotal, sumTax}
 function normUnit(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
 let DEP_OPEN=new Set();
 const LS_RES='lqtot_res_v1',LS_DEP='lqtot_dep_v1';
@@ -642,7 +642,7 @@ const MONTHS=['January','February','March','April','May','June','July','August',
 function pick(row,names){for(const n of names)for(const k in row)if(k.trim().toUpperCase()===n)return row[k];return '';}
 
 function buildRes(rows){
-  const out=[];
+  const out=[];INQUIRIES=[];
   rows.forEach(row=>{
     const listing=String(pick(row,['LISTING'])||'').trim();if(!listing)return;
     const slash=listing.indexOf('/');
@@ -653,16 +653,24 @@ function buildRes(rows){
     const accom=numify(pick(row,['ACCOMMODATION FARE'])),clean=numify(pick(row,['CLEANING FARE','CLEANING FEE'])),pet=numify(pick(row,['PET FEE']));
     const gross=r2(accom+clean+pet);
     const airbnbTax=numify(pick(row,['TRANSIENT OCCUPANCY TAX']));
-    const airbnbBase=airbnbTax?r2(airbnbTax/0.11):0;
     const tier=tierOf(nights);
     const payout=numify(pick(row,['TOTAL PAYOUT']));
+    const commission=numify(pick(row,['CHANNEL COMMISSION']));
+    /* Guesty's ACCOMMODATION FARE is the pre-discount list rate and misses extensions.
+       Airbnb payout = base x (1+rate) - commission, so base = (payout+commission)/(1+rate). */
+    const rateOf=t=>t==='full'?1.11:(t==='tot'?1.10:1);
+    const isAir=/^HM/i.test(String(pick(row,['CONFIRMATION CODE'])||'').trim());
+    const airbnbBase=(isAir&&payout>0&&commission>0&&tier!=='exempt')?r2((payout+commission)/rateOf(tier)):0;
     const disc=airbnbBase&&Math.abs(airbnbBase-gross)>1;
-    const confCode=String(pick(row,['CONFIRMATION CODE'])||'').trim();
-    const channel=/^HM/i.test(confCode)?'Airbnb':(confCode?'Other/VRBO':'');
-    out.push({unitCode,unitName,listing,conf:confCode,channel,
+    const confRaw=String(pick(row,['CONFIRMATION CODE'])||'').trim();
+    if(!confRaw){INQUIRIES.push({unitCode,guest:String(pick(row,['GUEST'])||'').trim(),ci,payout:r2(payout)});return;}
+    const channel=/^HM/i.test(confRaw)?'Airbnb':(/^GY-/i.test(confRaw)?'Guesty':'Other/VRBO');
+    const confCode=confRaw;
+    const cancelled=(gross===0&&payout===0);
+    out.push({unitCode,unitName,listing,conf:confCode,confRaw,cancelled,channel,
       guest:String(pick(row,['GUEST'])||'').trim(),ci,co,nights,tier,accom:r2(accom),clean:r2(clean),pet:r2(pet),
-      gross,airbnbTax:r2(airbnbTax),airbnbBase,payout:r2(payout),
-      filedBase:tier==='exempt'?0:gross,
+      gross,airbnbTax:r2(airbnbTax),airbnbBase,payout:r2(payout),commission:r2(commission),
+      filedBase:tier==='exempt'?0:(airbnbBase||gross),
       filingMonth:ci?(MONTHS[ci.getMonth()]+' '+ci.getFullYear()):'Unknown',
       disc,reviewed:true,note:''});
   });
@@ -722,12 +730,15 @@ function render(){
     if(r.disc){const gd=r2(r.gross-r.airbnbBase);
       // is the delta a separate Airbnb deposit? (e.g. added pet fee)
       const petDep=DEPOSITS.find(x=>Math.abs(x.amt-gd)<2);
-      const hint=petDep?` A separate ${money(petDep.amt)} Airbnb deposit (${petDep.date}) matches this gap — an added fee that IS taxable and is already inside the Guesty base.`:` Airbnb taxes its own gross, which includes amounts LQRM never receives, so a gap here is normal. Use the A button only if the stay was extended in Airbnb after Guesty synced.`;
-      recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — filing on Guesty base ${money(r.gross)}; Airbnb base was ${money(r.airbnbBase)} (Δ ${money(gd)}).${hint}`});}
+      recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — filing on the fare the guest actually paid, ${money(r.airbnbBase)}. Guesty's listed fare was ${money(r.gross)} (Δ ${money(gd)}), which is the pre-discount rate or misses an extension. Airbnb is authoritative; press G only if you need Guesty's figure.`});}
     if(r.tier==='exempt')recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, <strong>exempt</strong>. Zero return (0 on lines 1–3). Reservation total ${money(r.gross)}; Airbnb bills long stays monthly, so use the month's deposit for owner revenue.`});
   });
+  if(INQUIRIES.length){const t=r2(INQUIRIES.reduce((a,b)=>a+b.payout,0));
+    recon.unshift({cls:'',html:`<strong>${INQUIRIES.length} row(s) with no confirmation code were ignored</strong> &mdash; ${money(t)} of quoted value. Guesty exports inquiries and quotes alongside real bookings; only rows with a confirmation code count as reservations.`});}
+  const oddCh=RES.filter(r=>r.channel!=='Airbnb'&&!r.cancelled);
+  if(oddCh.length)recon.unshift({cls:'warnitem',html:`<strong>${oddCh.length} booking(s) are not Airbnb</strong> (${[...new Set(oddCh.map(r=>r.channel))].join(', ')}) &mdash; ${oddCh.map(r=>r.guest+' / '+r.unitCode).join('; ')}. Not covered by the Airbnb earnings report, so confirm each is a real reservation before filing.`});
   if(AX){
-    const cls={absent:'flagtag',short:'flagtag',exempt:'badge b-ex',idle:'badge b-ex',ok:'badge b-full'};
+    const cls={absent:'flagtag',short:'flagtag',over:'badge b-tot',exempt:'badge b-ex',idle:'badge b-ex',ok:'badge b-full'};
     const body=AX.rows.map(x=>{
       const gc=x.gap>1?'style="color:var(--bad);font-weight:700"':(x.gap<-0.005?'style="color:var(--warn)"':'');
       return `<tr><td class="l">${x.name}</td><td>${money(x.total)}</td><td>${money(x.tax)}</td><td>${money(x.computed)}</td><td ${gc}>${money(x.gap)}</td><td class="l"><span class="${cls[x.status]}">${x.label}</span></td></tr>`;}).join('');
@@ -736,6 +747,8 @@ function render(){
     const parts=[];
     if(AX.shortfall>1)parts.push(`Airbnb collected <strong>${money(AX.shortfall)}</strong> more tax than your Guesty export accounts for &mdash; that money is already in your bank and belongs to the city.`);
     if(nAbsent)parts.push(`<strong>${nAbsent} listing(s)</strong> carrying <strong>${money(AX.absentPay)}</strong> of Airbnb payouts have no bookings in the Guesty export at all.`);
+    const overs=AX.rows.filter(x=>x.status==='over');
+    if(overs.length)parts.push(`On ${overs.map(x=>x.name).join(', ')}, Airbnb collected <strong>${money(r2(overs.reduce((a,b)=>a-b.gap,0)))}</strong> LESS tax than the rent implies &mdash; you still owe the city the full amount, so check those listings' tax settings in Airbnb.`);
     const verdict=parts.length
       ? `<div class="item over" style="margin-top:12px"><strong>Do not file yet.</strong> ${parts.join(' ')} Re-run the Guesty export for the flagged listings.</div>`
       : `<div class="item okitem" style="margin-top:12px"><strong>Airbnb slice reconciles.</strong> Every Airbnb listing matches within $1.</div>`;
@@ -762,7 +775,7 @@ function render(){
       const depTxt=!DEPOSITS.length?'':(cov<=0.01?'<span class="unmatched">— none</span>':Math.abs(cov-r.payout)<0.5?`<span class="matched">✓ ${money(cov)}</span>`:`<span class="unmatched">${money(cov)} / ${money(r.payout)}</span>`);
       const stay=`${r.ci?r.ci.toLocaleDateString('en-US'):''} → ${r.co?r.co.toLocaleDateString('en-US'):''}`;
       return `<tr>
-        <td class="l" style="white-space:normal;min-width:150px">${r.guest}<div class="note">${r.conf} · ${r.channel||''}</div><div class="note">${stay} · ${r.nights} nts</div></td>
+        <td class="l" style="white-space:normal;min-width:150px">${r.guest}<div class="note">${r.confRaw||'<i>no code</i>'} · ${r.channel||''}${r.cancelled?' · <span class="flagtag">CANCELLED</span>':''}</div><div class="note">${stay} · ${r.nights} nts</div></td>
         <td class="l">${tierBadge(r.tier)}</td>
         <td class="note" style="text-align:right">G ${money(r.gross)}<br>A ${r.airbnbBase?money(r.airbnbBase):'—'}</td>
         <td>${r.tier==='exempt'?'—':`<input class="base" type="number" step="0.01" value="${r.filedBase.toFixed(2)}" data-idx="${idx}">${r.disc?`<div class="pick"><button class="mini" data-set="g" data-idx="${idx}">G</button><button class="mini" data-set="a" data-idx="${idx}">A</button></div>`:''}`}</td>
@@ -1133,19 +1146,24 @@ function parseAirbnb(lines){
   const sumTax=r2(list.reduce((s,h)=>s+h.tax,0));
   if(reportTotal!=null&&Math.abs(sumTotal-reportTotal)>0.02)
     throw new Error(`listing totals ${money(sumTotal)} do not sum to the report total ${money(reportTotal)} — format may have changed`);
-  return {period,homes:list,sumTotal,sumTax,reportTotal};
+  let monthName='';
+  const mm=period.match(/^([A-Z][a-z]+) \d{1,2}, (\d{4})/);if(mm)monthName=mm[1]+' '+mm[2];
+  return {period,monthName,homes:list,sumTotal,sumTax,reportTotal};
 }
 /* Cross-check: Airbnb-channel bookings only. VRBO/direct are not in this report. */
 function airCross(){
   if(!AIRBNB)return null;
   const rows=AIRBNB.homes.map(h=>{
-    const mine=RES.filter(r=>r.channel==='Airbnb'&&normUnit(r.unitCode)===h.key);
+    const mine=RES.filter(r=>r.channel==='Airbnb'&&normUnit(r.unitCode)===h.key&&(!AIRBNB.monthName||r.filingMonth===AIRBNB.monthName));
     const computed=r2(mine.reduce((s,r)=>s+taxOf(r).total,0));
     const gap=r2(h.tax-computed);
     let status='ok',label='exact';
-    if(!mine.length){status='absent';label='LISTING ABSENT';}
+    const anyMonth=RES.filter(r=>r.channel==='Airbnb'&&normUnit(r.unitCode)===h.key);
+    if(!mine.length&&anyMonth.length&&anyMonth.every(r=>r.tier==='exempt')&&h.tax===0){status='exempt';label='long stay · exempt';}
+    else if(!mine.length){status='absent';label='LISTING ABSENT';}
     else if(h.tax===0&&mine.every(r=>r.tier==='exempt')){status='exempt';label='exempt';}
-    else if(Math.abs(gap)>1){status='short';label='MISSING STAY';}
+    else if(gap>1){status='short';label='MISSING STAY';}
+    else if(gap<-1){status='over';label='AIRBNB UNDER-COLLECTED';}
     else if(Math.abs(gap)>0.005){status='ok';label='within $1';}
     return {...h,computed,gap,status,label,count:mine.length};
   });
