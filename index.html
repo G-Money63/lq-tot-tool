@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.15.0</title>
+<title>La Quinta TOT Tool — v0.15.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -345,7 +345,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.15.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.15.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -799,6 +799,11 @@ function render(){
     ['Needs review',needReview,needReview?'flag':'','citytax'],['Exempt',RES.filter(r=>r.tier==='exempt').length],['TOT-only',RES.filter(r=>r.tier==='tot').length]
   ].map(([l,n,c,jump])=>`<div class="kpi ${c||''} ${jump?'clickable':''}" ${jump?`data-jump="${jump}"`:''}><div class="n">${n}</div><div class="l">${l}${jump?' <span class="kpi-go">→</span>':''}</div></div>`).join('');
   document.querySelectorAll('.kpi.clickable').forEach(k=>k.addEventListener('click',e=>setView(e.currentTarget.dataset.jump)));
+  const dli=document.getElementById('dlIdle');
+  if(dli)dli.addEventListener('click',()=>{const act=new Set(monthRes().map(r=>r.unitCode));const idle=allUnits().filter(u=>!act.has(u));
+    if(!idle.length)return;const wb=XLSX.utils.book_new();
+    idle.forEach(u=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(u,[])),safeName(u)));
+    XLSX.writeFile(wb,`LaQuinta_NoRentalActivity_${curMonthName().replace(/\s+/g,'_')}.xlsx`);});
   setTimeout(()=>{
     document.querySelectorAll('.mini.exrow').forEach(b=>b.addEventListener('click',e=>{
       const c=e.currentTarget.dataset.conf;const r=RES.find(x=>x.conf===c);if(!r)return;
@@ -874,7 +879,22 @@ function render(){
 
   // units
   let html='';
-  for(const [code,list] of groupBy(RES,r=>r.unitCode)){
+  const activeUnits=new Set(monthRes().map(r=>r.unitCode));
+  const idleUnits=allUnits().filter(u=>!activeUnits.has(u));
+  if(idleUnits.length){
+    html+=`<div class="unit"><div class="uhead"><div><h3>No Rental Activity — ${idleUnits.length} unit(s)</h3>
+      <div class="sub">Still must be filed. Submit the No Rental Activity certification, then enter zeros on the La Quinta form and check out at $0.</div></div>
+      <button class="btn sm ghost" id="dlIdle">⬇ Download zero-return sheets</button></div>
+      <div class="ubody">${idleUnits.map(u=>`<div class="filebox ex"><div class="ttl">${u} — ${curMonthName()} — No Rental Activity</div><div class="lines">
+        <div><div class="lab">Reservations</div><div class="val">0</div></div>
+        <div><div class="lab">Nights</div><div class="val">0</div></div>
+        <div><div class="lab">Rent collected</div><div class="val">$0.00</div></div>
+        <div><div class="lab">TOT (10%)</div><div class="val">$0.00</div></div>
+        <div><div class="lab">TBID (1%)</div><div class="val">$0.00</div></div>
+        <div><div class="lab">Total due</div><div class="val">$0.00</div></div></div>
+        <div class="note" style="margin-top:8px">Check out at $0.</div></div>`).join('')}</div></div>`;
+  }
+  for(const [code,list] of groupBy(monthRes(),r=>r.unitCode)){
     const name=list[0].unitName||'';
     const rowsHtml=list.map(r=>{
       const idx=RES.indexOf(r),t=taxOf(r),flags=[];
@@ -1000,7 +1020,7 @@ function render(){
 /* City report: one consistent rent figure only. Guesty/Airbnb working columns are deliberately
    left out — showing three bases that disagree invites questions the city does not need asked. */
 function unitSheetAoa(code,list){
-  const name=list[0].unitName||'';
+  list=list||[];const name=(list[0]&&list[0].unitName)||(unitCfg(code).name||'');
   const taxable=list.filter(r=>r.tier!=='exempt');
   const aoa=[['La Quinta TOT Booking Report'],['Unit',code],['Property',name],['Filing period',curMonthName()],[],
     ['Guest','Confirmation','Check-in','Check-out','Nights','Rent collected','TOT 10%','TBID 1%','Total tax','Note']];
@@ -1035,9 +1055,13 @@ function downloadMaster(){
     const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});gT+=r2(tt.total);
     sum.push([code,list[0].unitName||'',fm,count,nights,base,r2(tt.tot),r2(tt.tbid),r2(tt.total),tier==='full'?'Standard 11%':tier==='tot'?'Non-TBID TOT 10%':'No Rental Activity — zeros']);
   }
+  const activeSum=new Set(MR.map(r=>r.unitCode));
+  allUnits().filter(u=>!activeSum.has(u)).forEach(u=>sum.push([u,unitCfg(u).name||'',curMonthName(),0,0,0,0,0,0,'No Rental Activity — zeros']));
   sum.push([],['','','','','','','','','TOTAL',r2(gT)]);
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),'Summary');
-  for(const [code,list] of groupBy(MR,r=>r.unitCode))XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));
+  const seen=new Set();
+  for(const [code,list] of groupBy(MR,r=>r.unitCode)){seen.add(code);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));}
+  allUnits().filter(u=>!seen.has(u)).forEach(u=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(u,[])),safeName(u)));
   if(DEPOSITS.length){const d=[['Airbnb deposits & allocations'],['Date','Ref','Channel','Deposit amount','Allocated to','Alloc amount']];
     DEPOSITS.forEach(x=>{if(!x.allocs||!x.allocs.length){d.push([x.date,x.ref,x.channel||'',x.amt,'(unallocated)','']);}
       else x.allocs.forEach(a=>{const r=RES.find(y=>y.conf===a.conf);d.push([x.date,x.ref,x.channel||'',x.amt,a.conf?(r?r.unitCode+' '+r.guest:a.conf):(a.custom||'other'),a.amt]);});});
