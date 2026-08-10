@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.13.1</title>
+<title>La Quinta TOT Tool — v0.14.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -345,7 +345,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.13.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.14.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -367,7 +367,8 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const RATE_TOT=0.10,RATE_TBID=0.01;
 let RES=[],DEPOSITS=[],EXPENSES=[],LASTROWS=null;
-let AIRBNB=null;let INQUIRIES=[]; // {period, homes:[{name,key,gross,fees,total,tax}], sumTotal, reportTotal, sumTax}
+let AIRBNB=null;let INQUIRIES=[];let EXCLUDED=[];
+const LS_EXCL='lqtot_excl_v1'; // {period, homes:[{name,key,gross,fees,total,tax}], sumTotal, reportTotal, sumTax}
 function normUnit(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
 let DEP_OPEN=new Set();
 const LS_RES='lqtot_res_v1',LS_DEP='lqtot_dep_v1';
@@ -448,7 +449,7 @@ function importOwnersCsv(file){
 function computeOwner(u){
   const rs=RES.filter(r=>r.unitCode===u);
   const gross=r2(rs.reduce((s,r)=>s+r.gross,0));
-  const payoutTot=r2(rs.reduce((s,r)=>s+r.payout,0));
+  const payoutTot=r2(rs.reduce((s,r)=>s+(typeof r.monthPayout==='number'?r.monthPayout:r.payout),0));
   const tax=r2(rs.reduce((s,r)=>s+taxOf(r).total,0));
   const confs=rs.map(r=>r.conf);
   let received=0;DEPOSITS.forEach(d=>(d.allocs||[]).forEach(a=>{if(a.conf&&confs.includes(a.conf))received+=a.amt||0;}));
@@ -684,28 +685,86 @@ function taxOf(r){const b=r.filedBase;const tot=r.tier==='exempt'?0:r2(b*RATE_TO
 function groupBy(a,f){const m=new Map();a.forEach(x=>{const k=f(x);(m.get(k)||m.set(k,[]).get(k)).push(x);});return m;}
 
 /* ---------- deposit matching ---------- */
+/* Guesty reports a whole booking's payout on one row. Airbnb pays long stays monthly and
+   pays short stays ~a day after check-in. monthPayout = what landed in the report's month. */
+function applyMonthPayouts(){
+  RES.forEach(r=>r.monthPayout=r.payout);
+  if(!AIRBNB||!AIRBNB.monthName)return;
+  const parts=AIRBNB.monthName.split(' ');const mIdx=MONTHS.indexOf(parts[0]),y=+parts[1];
+  if(mIdx<0)return;
+  const before=r=>r.ci&&(r.ci.getFullYear()<y||(r.ci.getFullYear()===y&&r.ci.getMonth()<mIdx));
+  const keys=new Set(AIRBNB.homes.map(h=>h.key));
+  RES.filter(r=>r.channel==='Airbnb').forEach(r=>{
+    // a stay under 30 nts is paid ~a day after check-in, so an earlier check-in was paid earlier
+    if(r.nights<30&&before(r))r.monthPayout=0;
+    // listing earned nothing in this report period
+    if(!keys.has(normUnit(r.unitCode)))r.monthPayout=0;
+  });
+  const byKey={};
+  RES.filter(r=>r.channel==='Airbnb').forEach(r=>{const k=normUnit(r.unitCode);(byKey[k]=byKey[k]||[]).push(r);});
+  AIRBNB.homes.forEach(h=>{
+    const rs=byKey[h.key];if(!rs||!rs.length)return;
+    if(h.total<=0){rs.forEach(r=>r.monthPayout=0);return;}
+    const inMonth=r=>r.ci&&r.ci.getMonth()===mIdx&&r.ci.getFullYear()===y;
+    let assigned=0;const pend=[];
+    rs.forEach(r=>{
+      if(r.nights>=30){r.monthPayout=null;pend.push(r);}
+      else if(inMonth(r)){r.monthPayout=r.payout;assigned+=r.payout;}
+      else r.monthPayout=0;
+    });
+    const residual=r2(h.total-assigned);
+    if(pend.length===1)pend[0].monthPayout=Math.max(0,residual);
+    else if(pend.length>1){const tp=pend.reduce((a,b)=>a+b.payout,0)||1;pend.forEach(r=>r.monthPayout=r2(Math.max(0,residual)*r.payout/tp));}
+  });
+}
+function excludedStore(){return lget(LS_EXCL);}
+function applyExclusions(){const ex=excludedStore();const keep=[];EXCLUDED=[];
+  RES.forEach(r=>{if(ex[r.conf]){r.excluded=true;EXCLUDED.push(r);}else keep.push(r);});RES=keep;}
+function setExcluded(conf,on){const ex=excludedStore();if(on)ex[conf]=true;else delete ex[conf];lset(LS_EXCL,ex);
+  if(on){const i=RES.findIndex(r=>r.conf===conf);if(i>=0){RES[i].excluded=true;EXCLUDED.push(RES[i]);RES.splice(i,1);}}
+  else{const i=EXCLUDED.findIndex(r=>r.conf===conf);if(i>=0){EXCLUDED[i].excluded=false;RES.push(EXCLUDED[i]);EXCLUDED.splice(i,1);
+    RES.sort((a,b)=>a.unitCode.localeCompare(b.unitCode)||(a.ci&&b.ci?a.ci-b.ci:0));}}
+  applyMonthPayouts();autoMatchDeposits();saveState();render();}
 function covered(conf){return DEPOSITS.reduce((s,d)=>s+(d.allocs||[]).filter(a=>a.conf===conf).reduce((t,a)=>t+(a.amt||0),0),0);}
 function autoMatchDeposits(){
   DEPOSITS.forEach(d=>{d.allocs=[];d.suggested=false;d.hint='';});
-  const done=r=>Math.abs(covered(r.conf)-r.payout)<0.5;
-  RES.forEach(r=>{if(done(r))return;const d=DEPOSITS.find(x=>!x.allocs.length&&Math.abs(x.amt-r.payout)<0.02);if(d)d.allocs=[{conf:r.conf,custom:null,amt:d.amt}];});
-  RES.forEach(r=>{if(done(r))return;const free=DEPOSITS.filter(x=>!x.allocs.length);
+  const want=r=>(typeof r.monthPayout==='number'?r.monthPayout:r.payout);
+  const done=r=>Math.abs(covered(r.conf)-want(r))<0.5;
+  const live=RES.filter(r=>want(r)>0.01);
+  // 1. one deposit == one booking
+  live.forEach(r=>{if(done(r))return;const d=DEPOSITS.find(x=>!x.allocs.length&&Math.abs(x.amt-want(r))<0.02);if(d)d.allocs=[{conf:r.conf,custom:null,amt:d.amt}];});
+  // 2. two deposits == one booking (monthly installments)
+  live.forEach(r=>{if(done(r))return;const free=DEPOSITS.filter(x=>!x.allocs.length);
     for(let i=0;i<free.length;i++)for(let j=i+1;j<free.length;j++)
-      if(Math.abs(free[i].amt+free[j].amt-r.payout)<0.02){free[i].allocs=[{conf:r.conf,custom:null,amt:free[i].amt}];free[j].allocs=[{conf:r.conf,custom:null,amt:free[j].amt}];return;}});
+      if(Math.abs(free[i].amt+free[j].amt-want(r))<0.02){free[i].allocs=[{conf:r.conf,custom:null,amt:free[i].amt}];free[j].allocs=[{conf:r.conf,custom:null,amt:free[j].amt}];return;}});
+  // 3. one deposit == several bookings (Airbnb batches listings into one payout).
+  //    Only splits on exact known payouts, never on a guess.
+  DEPOSITS.filter(d=>!d.allocs.length).forEach(d=>{
+    const open=live.filter(r=>!done(r));if(open.length<2)return;
+    let hit=null;
+    for(let i=0;i<open.length&&!hit;i++)for(let j=i+1;j<open.length&&!hit;j++){
+      if(Math.abs(want(open[i])+want(open[j])-d.amt)<0.02)hit=[open[i],open[j]];
+      else for(let k=j+1;k<open.length&&!hit;k++)
+        if(Math.abs(want(open[i])+want(open[j])+want(open[k])-d.amt)<0.02)hit=[open[i],open[j],open[k]];}
+    if(hit){d.allocs=hit.map(r=>({conf:r.conf,custom:null,amt:r2(want(r))}));d.suggested=true;
+      d.hint='split across '+hit.length+' bookings — amounts match their payouts exactly';}});
   const yr=(RES.find(r=>r.ci)||{}).ci;const year=yr?yr.getFullYear():new Date().getFullYear();
   const earliest=RES.reduce((m,r)=>r.ci&&(!m||r.ci<m)?r.ci:m,null);
   DEPOSITS.forEach(d=>{if(d.allocs.length)return;
     const dm=String(d.date).match(/(\d{1,2})\/(\d{1,2})/);const dd=dm?new Date(year,+dm[1]-1,+dm[2]):null;
     let best=null;
     RES.forEach(r=>{if(!r.ci)return;const gap=dd?Math.round((dd-r.ci)/86400000):999;const near=gap>=0&&gap<=7;const cov=covered(r.conf)>0.5;
-      const closeFull=Math.abs(d.amt-r.payout)<=Math.max(2,r.payout*0.01)&&!cov;
-      const installment=r.tier==='exempt'&&d.amt<r.payout-1&&near&&!cov;
+      const wp=(typeof r.monthPayout==='number'?r.monthPayout:r.payout);if(wp<=0.01)return;
+      const closeFull=Math.abs(d.amt-wp)<=Math.max(2,wp*0.01)&&!cov;
+      const installment=r.tier==='exempt'&&d.amt<wp-1&&near&&!cov;
       let score=0,why='';
       if(closeFull){score=100-Math.abs(d.amt-r.payout)+(near?5:0);why='amount ≈ full payout';}
       else if(installment){score=60-Math.abs(gap);why='monthly installment (long-term stay)';}
       if(score>0&&(!best||score>best.score))best={r,score,why};});
     if(best){d.allocs=[{conf:best.r.conf,custom:null,amt:d.amt}];d.suggested=true;d.hint=best.why;}
-    else d.hint=(earliest&&dd&&dd<earliest)?'before your earliest check-in — likely prior-month (type a name below)':'likely a batched payout — use ＋ split to divide it';
+    else{const stillOpen=RES.some(r=>{const wp=(typeof r.monthPayout==='number'?r.monthPayout:r.payout);return wp>0.01&&Math.abs(covered(r.conf)-wp)>=0.5;});
+      d.hint=!stillOpen?'every booking this month is already matched — this is revenue from a prior month (Airbnb pays about a day after check-in), so leave it unallocated'
+        :(earliest&&dd&&dd<earliest)?'before your earliest check-in — likely prior-month (type a name below)':'likely a batched payout — use ＋ split to divide it';}
   });
   applySavedDep();
 }
@@ -724,6 +783,11 @@ function render(){
     ['Needs review',needReview,needReview?'flag':'','citytax'],['Exempt',RES.filter(r=>r.tier==='exempt').length],['TOT-only',RES.filter(r=>r.tier==='tot').length]
   ].map(([l,n,c,jump])=>`<div class="kpi ${c||''} ${jump?'clickable':''}" ${jump?`data-jump="${jump}"`:''}><div class="n">${n}</div><div class="l">${l}${jump?' <span class="kpi-go">→</span>':''}</div></div>`).join('');
   document.querySelectorAll('.kpi.clickable').forEach(k=>k.addEventListener('click',e=>setView(e.currentTarget.dataset.jump)));
+  setTimeout(()=>{
+    document.querySelectorAll('.mini.exrow').forEach(b=>b.addEventListener('click',e=>{const c=e.currentTarget.dataset.conf;
+      if(confirm('Remove this booking from the month? It will stop counting toward tax, owner statements and deposits. You can restore it later.'))setExcluded(c,true);}));
+    document.querySelectorAll('.mini.unexrow').forEach(b=>b.addEventListener('click',e=>setExcluded(e.currentTarget.dataset.conf,false)));
+  },0);
 
   // reconciliation
   const recon=[];
@@ -734,8 +798,12 @@ function render(){
       // is the delta a separate Airbnb deposit? (e.g. added pet fee)
       const petDep=DEPOSITS.find(x=>Math.abs(x.amt-gd)<2);
       recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — filing on the fare the guest actually paid, ${money(r.airbnbBase)}. Guesty's listed fare was ${money(r.gross)} (Δ ${money(gd)}), which is the pre-discount rate or misses an extension. Airbnb is authoritative; press G only if you need Guesty's figure.`});}
-    if(r.tier==='exempt')recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, <strong>exempt</strong>. Zero return (0 on lines 1–3). Reservation total ${money(r.gross)}; Airbnb bills long stays monthly, so use the month's deposit for owner revenue.`});
+    if(r.tier==='exempt'){const wp=(typeof r.monthPayout==='number'?r.monthPayout:r.payout);
+      const slice=(r.nights>=30&&Math.abs(wp-r.payout)>1)?` Whole booking is ${money(r.payout)} across several months; <strong>${money(wp)}</strong> was paid this month and that is what the owner statement uses.`:'';
+      recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, <strong>exempt</strong>. Zero return (0 on lines 1–3).${slice}`});}
   });
+  if(EXCLUDED.length){const t=r2(EXCLUDED.reduce((a,b)=>a+b.gross,0));
+    recon.unshift({cls:'',html:`<strong>${EXCLUDED.length} row(s) you marked as not real bookings</strong> — ${money(t)} excluded from tax, owner statements and deposits: ${EXCLUDED.map(r=>`${r.guest} / ${r.unitCode} <button class="mini unexrow" data-conf="${r.conf}">restore</button>`).join(' &nbsp;·&nbsp; ')}`});}
   if(INQUIRIES.length){const t=r2(INQUIRIES.reduce((a,b)=>a+b.payout,0));
     recon.unshift({cls:'',html:`<strong>${INQUIRIES.length} row(s) with no confirmation code were ignored</strong> &mdash; ${money(t)} of quoted value. Guesty exports inquiries and quotes alongside real bookings; only rows with a confirmation code count as reservations.`});}
   const oddCh=RES.filter(r=>r.channel!=='Airbnb'&&!r.cancelled);
@@ -776,7 +844,8 @@ function render(){
       if(!r.reviewed)flags.push('<span class="flagtag review">REVIEW</span>');
       if(r.tier==='tot'&&r.airbnbTax>0)flags.push('<span class="flagtag">TBID over</span>');
       const cov=covered(r.conf);
-      const depTxt=!DEPOSITS.length?'':(cov<=0.01?'<span class="unmatched">— none</span>':Math.abs(cov-r.payout)<0.5?`<span class="matched">✓ ${money(cov)}</span>`:`<span class="unmatched">${money(cov)} / ${money(r.payout)}</span>`);
+      const wp=(typeof r.monthPayout==='number'?r.monthPayout:r.payout);
+      const depTxt=!DEPOSITS.length?'':(wp<=0.01?'<span class="note">paid in another month</span>':cov<=0.01?'<span class="unmatched">— none</span>':Math.abs(cov-wp)<0.5?`<span class="matched">✓ ${money(cov)}</span>`:`<span class="unmatched">${money(cov)} / ${money(wp)}</span>`);
       const stay=`${r.ci?r.ci.toLocaleDateString('en-US'):''} → ${r.co?r.co.toLocaleDateString('en-US'):''}`;
       return `<tr>
         <td class="l" style="white-space:normal;min-width:150px">${r.guest}<div class="note">${r.confRaw||'<i>no code</i>'} · ${r.channel||''}${r.cancelled?' · <span class="flagtag">CANCELLED</span>':''}</div><div class="note">${stay} · ${r.nights} nts</div></td>
@@ -784,7 +853,7 @@ function render(){
         <td class="note" style="text-align:right">G ${money(r.gross)}<br>A ${r.airbnbBase?money(r.airbnbBase):'—'}</td>
         <td>${r.tier==='exempt'?'—':`<input class="base" type="number" step="0.01" value="${r.filedBase.toFixed(2)}" data-idx="${idx}">${r.disc?`<div class="pick"><button class="mini" data-set="g" data-idx="${idx}">G</button><button class="mini" data-set="a" data-idx="${idx}">A</button></div>`:''}`}</td>
         <td>${money(t.total)}</td>
-        <td class="l">${flags.join(' ')||'<span class="badge b-full">ok</span>'}${!r.reviewed?` <button class="mini ctok" data-idx="${idx}" style="border-color:var(--ok);color:var(--ok)">✓ OK</button>`:''}${depTxt?'<div style="margin-top:2px">'+depTxt+'</div>':''}<div style="margin-top:4px"><input class="note" type="text" placeholder="note…" value="${(r.note||'').replace(/"/g,'&quot;')}" data-idx="${idx}" style="width:120px"></div></td>
+        <td class="l">${flags.join(' ')||'<span class="badge b-full">ok</span>'}${!r.reviewed?` <button class="mini ctok" data-idx="${idx}" style="border-color:var(--ok);color:var(--ok)">✓ OK</button>`:''}${depTxt?'<div style="margin-top:2px">'+depTxt+'</div>':''}<div style="margin-top:4px"><input class="note" type="text" placeholder="note…" value="${(r.note||'').replace(/"/g,'&quot;')}" data-idx="${idx}" style="width:120px"> <button class="mini exrow" data-conf="${r.conf}" title="Remove this row — not a real booking" style="border-color:#c98;color:#a4232b">not a booking</button></div></td>
       </tr>`;}).join('');
     let boxes='';
     for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
@@ -1057,7 +1126,7 @@ function monthsStore(){try{return JSON.parse(localStorage.getItem(LS_MONTHS)||'{
 function curMonthName(){const c={};RES.forEach(r=>{c[r.filingMonth]=(c[r.filingMonth]||0)+1;});let b='',n=-1;Object.entries(c).forEach(([k,v])=>{if(v>n){n=v;b=k;}});return b||'Unsaved';}
 function saveMonth(){if(!RES.length)return;CURMONTH=curMonthName();const m=monthsStore();m[CURMONTH]={res:serRes(),deposits:DEPOSITS,airbnb:AIRBNB,savedAt:new Date().toISOString()};try{localStorage.setItem(LS_MONTHS,JSON.stringify(m));}catch(e){}populateMonths();}
 function loadMonth(name){const snap=monthsStore()[name];if(!snap)return;RES=hydRes(snap.res||[]);DEPOSITS=snap.deposits||[];AIRBNB=snap.airbnb||null;CURMONTH=name;
-  applySavedRes();applySavedDep();
+  applySavedRes();applyExclusions();applyMonthPayouts();applySavedDep();
   document.getElementById('homeStatus').classList.remove('hidden');
   document.getElementById('dropCsv').classList.toggle('done',RES.length>0);document.getElementById('dropPdf').classList.toggle('done',DEPOSITS.length>0);document.getElementById('dropAir').classList.toggle('done',!!AIRBNB);
   document.getElementById('viewSub').textContent=name;render();populateMonths();updateDropStats();}
@@ -1099,7 +1168,7 @@ function handleCsv(file){
   document.getElementById('err').textContent='';
   Papa.parse(file,{header:true,skipEmptyLines:true,complete:res=>{
     try{RES=buildRes(res.data);if(!RES.length){document.getElementById('err').textContent='No reservations found — is this the Guesty all-listings export?';return;}
-      LASTROWS=res.data;applySavedRes();
+      LASTROWS=res.data;applySavedRes();applyExclusions();applyMonthPayouts();
       if(DEPOSITS.length)autoMatchDeposits();
       document.getElementById('dropCsv').classList.add('done');showResults();
     }catch(e){document.getElementById('err').textContent='CSV error: '+e.message;}
@@ -1180,7 +1249,7 @@ async function handleAir(file){
   document.getElementById('err').textContent='';
   try{
     const buf=await file.arrayBuffer();const lines=await pdfToLines(buf);
-    AIRBNB=parseAirbnb(lines);
+    AIRBNB=parseAirbnb(lines);applyMonthPayouts();if(DEPOSITS.length&&RES.length)autoMatchDeposits();
     document.getElementById('dropAir').classList.add('done');
     updateDropStats();
     if(RES.length)showResults();
@@ -1192,7 +1261,7 @@ async function handlePdf(file){
   document.getElementById('err').textContent='';
   try{const buf=await file.arrayBuffer();const lines=await pdfToLines(buf);parseBank(lines.join('\n'));
     if(!DEPOSITS.length){document.getElementById('err').textContent='No Airbnb deposits detected in that PDF. You can add them manually below once a CSV is loaded.';}
-    if(RES.length)autoMatchDeposits();
+    if(RES.length){applyMonthPayouts();autoMatchDeposits();}
     document.getElementById('dropPdf').classList.add('done');
     if(RES.length)showResults();
   }catch(e){document.getElementById('err').textContent='PDF error: '+e.message;}
