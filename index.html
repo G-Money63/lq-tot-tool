@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.10.0</title>
+<title>La Quinta TOT Tool — v0.11.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -21,8 +21,10 @@
   header h1{margin:0;font-size:22px}header p{margin:4px 0 0;color:#cfe0ee;font-size:13px}
   .wrap{max-width:1160px;margin:0 auto;padding:22px 20px 60px}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:20px}
-  .drops{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  @media(max-width:720px){.drops{grid-template-columns:1fr}}
+  .drops{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  @media(max-width:900px){.drops{grid-template-columns:1fr}}
+  .airtbl td.gap{font-weight:700}
+  .auto{font-size:11px;font-weight:700;color:var(--info);background:var(--infobg);padding:2px 8px;border-radius:20px}
   .drop{border:2px dashed #9fb4c6;border-radius:10px;background:#f7fafc;padding:24px;text-align:center;cursor:pointer;transition:.15s}
   .drop:hover,.drop.hot{background:#eaf2f8;border-color:var(--navy)}
   .drop strong{color:var(--navy)}
@@ -208,8 +210,9 @@
       <div class="panel" id="newMonthArea">
         <h2>Start this month's close</h2>
         <div class="drops">
-          <div id="dropCsv" class="drop"><div><strong>1 &middot; Guesty CSV</strong> (required)</div><div class="hint">All-listings reservations export. Drop or click.</div><div class="dropstat" id="csvStat"></div><input id="fileCsv" type="file" accept=".csv" class="hidden"></div>
-          <div id="dropPdf" class="drop"><div><strong>2 &middot; Bank statement PDF</strong> (optional)</div><div class="hint">La Quinta Resort Mgmt statement. Drop or click.</div><div class="dropstat" id="pdfStat"></div><input id="filePdf" type="file" accept=".pdf" class="hidden"></div>
+          <div id="dropCsv" class="drop"><div><strong>1 &middot; Guesty CSV</strong> (required)</div><div class="hint">All-listings reservations export &mdash; the only source that sees Airbnb, VRBO and direct. Drop or click.</div><div class="dropstat" id="csvStat"></div><input id="fileCsv" type="file" accept=".csv" class="hidden"></div>
+          <div id="dropPdf" class="drop"><div><strong>2 &middot; Bank statement PDF</strong> (required)</div><div class="hint">Proof the money arrived. Any deposit with no booking means the CSV is short. Drop or click.</div><div class="dropstat" id="pdfStat"></div><input id="filePdf" type="file" accept=".pdf" class="hidden"></div>
+          <div id="dropAir" class="drop"><div><strong>3 &middot; Airbnb Earnings PDF</strong> (required)</div><div class="hint">Airbnb monthly earnings report &mdash; proves the Airbnb slice is complete. Drop or click.</div><div class="dropstat" id="airStat"></div><input id="fileAir" type="file" accept=".pdf" class="hidden"></div>
         </div>
         <div id="err" class="note" style="color:var(--bad);margin-top:10px"></div>
         <div class="note" style="margin-top:6px">Everything runs on your device. Nothing is uploaded anywhere.</div>
@@ -341,7 +344,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.10.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.11.0 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -363,6 +366,8 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const RATE_TOT=0.10,RATE_TBID=0.01;
 let RES=[],DEPOSITS=[],EXPENSES=[],LASTROWS=null;
+let AIRBNB=null; // {period, homes:[{name,key,gross,fees,total,tax}], sumTotal, reportTotal, sumTax}
+function normUnit(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
 let DEP_OPEN=new Set();
 const LS_RES='lqtot_res_v1',LS_DEP='lqtot_dep_v1';
 function lget(k){try{return JSON.parse(localStorage.getItem(k)||'{}');}catch(e){return {};}}
@@ -701,8 +706,10 @@ function render(){
   RES.forEach(r=>{cityTax+=taxOf(r).total;if(r.disc)disc++;if(r.tier==='tot'&&r.airbnbTax>0)over+=r2(r.airbnbTax-taxOf(r).total);});
   const units=new Set(RES.map(r=>r.unitCode)).size;
   const needReview=RES.filter(r=>!r.reviewed).length;
+  const AX=airCross();
+  const airKpis=AX?[['Airbnb collected',money(AIRBNB.sumTax),'good'],['Shortfall',money(AX.shortfall),AX.shortfall>1?'flag':'','revenue']]:[];
   document.getElementById('kpis').innerHTML=[
-    ['Units',units],['Reservations',RES.length],['Total tax due',money(cityTax)],
+    ['Units',units],['Reservations',RES.length],['Total tax due',money(cityTax)],...airKpis,
     ['Needs review',needReview,needReview?'flag':'','citytax'],['Exempt',RES.filter(r=>r.tier==='exempt').length],['TOT-only',RES.filter(r=>r.tier==='tot').length]
   ].map(([l,n,c,jump])=>`<div class="kpi ${c||''} ${jump?'clickable':''}" ${jump?`data-jump="${jump}"`:''}><div class="n">${n}</div><div class="l">${l}${jump?' <span class="kpi-go">→</span>':''}</div></div>`).join('');
   document.querySelectorAll('.kpi.clickable').forEach(k=>k.addEventListener('click',e=>setView(e.currentTarget.dataset.jump)));
@@ -719,7 +726,29 @@ function render(){
       recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — filing on Guesty base ${money(r.gross)}; Airbnb base was ${money(r.airbnbBase)} (Δ ${money(gd)}).${hint}`});}
     if(r.tier==='exempt')recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, <strong>exempt</strong>. Zero return (0 on lines 1–3). Reservation total ${money(r.gross)}; Airbnb bills long stays monthly, so use the month's deposit for owner revenue.`});
   });
-  document.getElementById('recon').innerHTML=recon.length?recon.map(x=>`<div class="item ${x.cls}">${x.html}</div>`).join(''):'<div class="item okitem">Nothing to flag — every reservation reconciles cleanly.</div>';
+  if(AX){
+    const cls={absent:'flagtag',short:'flagtag',exempt:'badge b-ex',idle:'badge b-ex',ok:'badge b-full'};
+    const body=AX.rows.map(x=>{
+      const gc=x.gap>1?'style="color:var(--bad);font-weight:700"':(x.gap<-0.005?'style="color:var(--warn)"':'');
+      return `<tr><td class="l">${x.name}</td><td>${money(x.total)}</td><td>${money(x.tax)}</td><td>${money(x.computed)}</td><td ${gc}>${money(x.gap)}</td><td class="l"><span class="${cls[x.status]}">${x.label}</span></td></tr>`;}).join('');
+    const nonAirNote=AX.nonAir.length?`<div class="note" style="margin-top:6px">${AX.nonAir.length} non-Airbnb booking(s) are excluded from this comparison &mdash; the Airbnb report does not cover VRBO or direct.</div>`:'';
+    const nAbsent=AX.rows.filter(x=>x.status==='absent').length;
+    const parts=[];
+    if(AX.shortfall>1)parts.push(`Airbnb collected <strong>${money(AX.shortfall)}</strong> more tax than your Guesty export accounts for &mdash; that money is already in your bank and belongs to the city.`);
+    if(nAbsent)parts.push(`<strong>${nAbsent} listing(s)</strong> carrying <strong>${money(AX.absentPay)}</strong> of Airbnb payouts have no bookings in the Guesty export at all.`);
+    const verdict=parts.length
+      ? `<div class="item over" style="margin-top:12px"><strong>Do not file yet.</strong> ${parts.join(' ')} Re-run the Guesty export for the flagged listings.</div>`
+      : `<div class="item okitem" style="margin-top:12px"><strong>Airbnb slice reconciles.</strong> Every Airbnb listing matches within $1.</div>`;
+    const html=`<div class="panel" style="padding:0;border:none;margin:0 0 14px">
+      <h2>Airbnb cross-check &mdash; tax by listing</h2>
+      <p class="note" style="margin-top:-6px">Airbnb's pass-through tax was collected from the guest and deposited to you. Anything above your computed figure is tax you are holding but not filing.${AIRBNB.period?' Report period: '+AIRBNB.period+'.':''}</p>
+      <table class="airtbl"><thead><tr><th class="l">Listing</th><th>Airbnb payout</th><th>Airbnb tax</th><th>Tool tax</th><th>Gap</th><th class="l">Status</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><td class="l"><b>Total</b></td><td><b>${money(AIRBNB.sumTotal)}</b></td><td><b>${money(AIRBNB.sumTax)}</b></td><td><b>${money(r2(AX.rows.reduce((a,b)=>a+b.computed,0)))}</b></td><td><b>${money(AX.shortfall)}</b></td><td></td></tr></tfoot></table>
+      ${nonAirNote}${verdict}</div>`;
+    document.getElementById('recon').innerHTML=html+(recon.length?recon.map(x=>`<div class="item ${x.cls}">${x.html}</div>`).join(''):'');
+    document.getElementById('reconPanel').classList.remove('hidden');
+  } else document.getElementById('recon').innerHTML=recon.length?recon.map(x=>`<div class="item ${x.cls}">${x.html}</div>`).join(''):'<div class="item okitem">Nothing to flag — every reservation reconciles cleanly.</div>';
 
   // units
   let html='';
@@ -941,7 +970,11 @@ function reconChecks(){
   const alloc=r2(DEPOSITS.reduce((s,d)=>s+(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0),0));
   const unalloc=r2(totalDep-alloc);
   const noOwner=unitList().filter(u=>!(unitCfg(u).owners||[]).some(o=>o.name));
+  const AX2=airCross();
   return [
+    {ok:DEPOSITS.length>0,label:`Bank statement loaded — ${DEPOSITS.length} deposits`,bad:`Bank statement not loaded — no way to prove the money arrived`},
+    {ok:!!AIRBNB,label:`Airbnb report loaded — ${AIRBNB?money(AIRBNB.sumTax):''} cross-checked`,bad:`Airbnb earnings report not loaded — Airbnb bookings are unverified`},
+    {ok:!AX2||(AX2.shortfall<=1&&!AX2.rows.some(x=>x.status==='absent')),label:`Airbnb cross-check clear — every listing accounted for`,bad:AX2?(AX2.shortfall>1?`${money(AX2.shortfall)} of Airbnb tax collected but not filed`:`${AX2.rows.filter(x=>x.status==='absent').length} Airbnb listing(s) missing from the Guesty export`):'Airbnb cross-check unavailable',jump:'revenue'},
     {ok:Math.abs(cityTax-stmtTax)<0.01,label:`Tax ties — City tax ${money(cityTax)} = statements ${money(stmtTax)}`,bad:`Tax mismatch — City tax ${money(cityTax)} vs statements ${money(stmtTax)}`},
     {ok:needRev===0,label:`All City tax rows reviewed`,bad:`${needRev} City tax row${needRev!==1?'s':''} still need review`,jump:'citytax'},
     {ok:Math.abs(unalloc)<0.01,label:`Deposits fully allocated — $0 unallocated`,bad:`${money(unalloc)} still unallocated`,jump:'revenue'},
@@ -1005,16 +1038,16 @@ function serRes(){return RES.map(r=>Object.assign({},r,{ci:r.ci?r.ci.toISOString
 function hydRes(a){return a.map(r=>Object.assign({},r,{ci:r.ci?new Date(r.ci):null,co:r.co?new Date(r.co):null}));}
 function monthsStore(){try{return JSON.parse(localStorage.getItem(LS_MONTHS)||'{}');}catch(e){return {};}}
 function curMonthName(){const c={};RES.forEach(r=>{c[r.filingMonth]=(c[r.filingMonth]||0)+1;});let b='',n=-1;Object.entries(c).forEach(([k,v])=>{if(v>n){n=v;b=k;}});return b||'Unsaved';}
-function saveMonth(){if(!RES.length)return;CURMONTH=curMonthName();const m=monthsStore();m[CURMONTH]={res:serRes(),deposits:DEPOSITS,savedAt:new Date().toISOString()};try{localStorage.setItem(LS_MONTHS,JSON.stringify(m));}catch(e){}populateMonths();}
-function loadMonth(name){const snap=monthsStore()[name];if(!snap)return;RES=hydRes(snap.res||[]);DEPOSITS=snap.deposits||[];CURMONTH=name;
+function saveMonth(){if(!RES.length)return;CURMONTH=curMonthName();const m=monthsStore();m[CURMONTH]={res:serRes(),deposits:DEPOSITS,airbnb:AIRBNB,savedAt:new Date().toISOString()};try{localStorage.setItem(LS_MONTHS,JSON.stringify(m));}catch(e){}populateMonths();}
+function loadMonth(name){const snap=monthsStore()[name];if(!snap)return;RES=hydRes(snap.res||[]);DEPOSITS=snap.deposits||[];AIRBNB=snap.airbnb||null;CURMONTH=name;
   applySavedRes();applySavedDep();
   document.getElementById('homeStatus').classList.remove('hidden');
-  document.getElementById('dropCsv').classList.toggle('done',RES.length>0);document.getElementById('dropPdf').classList.toggle('done',DEPOSITS.length>0);
+  document.getElementById('dropCsv').classList.toggle('done',RES.length>0);document.getElementById('dropPdf').classList.toggle('done',DEPOSITS.length>0);document.getElementById('dropAir').classList.toggle('done',!!AIRBNB);
   document.getElementById('viewSub').textContent=name;render();populateMonths();updateDropStats();}
 function populateMonths(){const m=monthsStore();const sel=document.getElementById('monthSel');if(!sel)return;const names=Object.keys(m).sort().reverse();
   sel.innerHTML=(names.length?names:['(no months yet)']).map(n=>`<option${n===CURMONTH?' selected':''}>${n}</option>`).join('');}
-function newMonth(){RES=[];DEPOSITS=[];['homeStatus','reconPanel','depPanel','ownerRptPanel','ownerExpPanel','ownerSetupPanel','expPanel'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.add('hidden');});
-  document.getElementById('newMonthArea').classList.remove('hidden');document.getElementById('dropCsv').classList.remove('done');document.getElementById('dropPdf').classList.remove('done');
+function newMonth(){RES=[];DEPOSITS=[];AIRBNB=null;['homeStatus','reconPanel','depPanel','ownerRptPanel','ownerExpPanel','ownerSetupPanel','expPanel'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.add('hidden');});
+  document.getElementById('newMonthArea').classList.remove('hidden');document.getElementById('dropCsv').classList.remove('done');document.getElementById('dropPdf').classList.remove('done');document.getElementById('dropAir').classList.remove('done');
   document.getElementById('err').textContent='';document.getElementById('viewSub').textContent='new month';updateDropStats();setView('home');}
 function renderListings(){
   const el=document.getElementById('listingsTable');
@@ -1038,11 +1071,12 @@ function renderListings(){
 function renderHistory(){const m=monthsStore();const el=document.getElementById('historyList');const names=Object.keys(m).sort().reverse();
   el.innerHTML=names.length?names.map(n=>`<div class="oline"><span><b>${n}</b> &middot; <span class="note">saved ${new Date(m[n].savedAt).toLocaleDateString('en-US')}</span></span><button class="btn sm ghost loadmo" data-m="${n}">Open</button></div>`).join(''):'<div class="note">No saved months yet. Process one from Home.</div>';
   el.querySelectorAll('.loadmo').forEach(b=>b.addEventListener('click',e=>{loadMonth(e.target.dataset.m);setView('home');}));}
-function updateDropStats(){const c=document.getElementById('csvStat'),p=document.getElementById('pdfStat');
+function updateDropStats(){const c=document.getElementById('csvStat'),p=document.getElementById('pdfStat'),a=document.getElementById('airStat');
   if(c)c.textContent=RES.length?`✓ Loaded — ${RES.length} reservations · ${curMonthName()}`:'';
-  if(p)p.textContent=DEPOSITS.length?`✓ Loaded — ${DEPOSITS.length} deposits`:'';}
+  if(p)p.textContent=DEPOSITS.length?`✓ Loaded — ${DEPOSITS.length} deposits`:'';
+  if(a)a.textContent=AIRBNB?`✓ Loaded — ${AIRBNB.homes.length} listings · ${money(AIRBNB.sumTax)} pass-through tax`:'';}
 function showResults(){document.getElementById('homeStatus').classList.remove('hidden');CURMONTH=curMonthName();document.getElementById('viewSub').textContent=CURMONTH;
-  if(RES.length)document.getElementById('dropCsv').classList.add('done');if(DEPOSITS.length)document.getElementById('dropPdf').classList.add('done');
+  if(RES.length)document.getElementById('dropCsv').classList.add('done');if(DEPOSITS.length)document.getElementById('dropPdf').classList.add('done');if(AIRBNB)document.getElementById('dropAir').classList.add('done');
   updateDropStats();render();saveMonth();setView('home');}
 function handleCsv(file){
   document.getElementById('err').textContent='';
@@ -1075,6 +1109,63 @@ function parseBank(text){
   let x;const rt=/(\d{1,2}\/\d{1,2})\s+Online Transfer\s+(?:FUNDS TRANSFERRED|ACH TRANSFER OUTGOING)[^\(]*\(([\d,]+\.\d{2})\)/g;
   while((x=rt.exec(text)))EXPENSES.push({date:x[1],payee:'Outgoing transfer',cat:'Owner distribution / transfer',amt:parseFloat(x[2].replace(/,/g,''))});
 }
+function parseAirbnb(lines){
+  const homes={};let reportTotal=null,period='';
+  const MONEY=/-?\$[\d,]+\.\d{2}/g;
+  lines.forEach(raw=>{
+    const l=String(raw).trim();
+    const pm=l.match(/^([A-Z][a-z]+ \d{1,2}, \d{4})\s*[–\-—]\s*([A-Z][a-z]+ \d{1,2}, \d{4})/);
+    if(pm&&!period)period=pm[1]+' – '+pm[2];
+    const nums=l.match(MONEY);if(!nums)return;
+    const name=l.slice(0,l.indexOf(nums[0])).trim();
+    if(!name)return;
+    const v=nums.map(x=>parseFloat(x.replace(/[$,]/g,'')));
+    if(/^Earnings$/i.test(name)&&v.length===5){reportTotal=v[4];return;}
+    if(/^(Home|Types|Payout method|Summary|Homes|Pass through tax)/i.test(name))return;
+    const key=normUnit(name);if(!key)return;
+    homes[key]=homes[key]||{name,key,gross:0,fees:0,total:0,tax:0};
+    if(v.length===5){homes[key].name=name;homes[key].gross=v[0];homes[key].fees=v[2];homes[key].total=v[4];}
+    else if(v.length===4){homes[key].tax=v[1];}
+  });
+  const list=Object.values(homes).filter(h=>h.total>0||h.tax>0);
+  if(!list.length)throw new Error('no listing rows found');
+  const sumTotal=r2(list.reduce((s,h)=>s+h.total,0));
+  const sumTax=r2(list.reduce((s,h)=>s+h.tax,0));
+  if(reportTotal!=null&&Math.abs(sumTotal-reportTotal)>0.02)
+    throw new Error(`listing totals ${money(sumTotal)} do not sum to the report total ${money(reportTotal)} — format may have changed`);
+  return {period,homes:list,sumTotal,sumTax,reportTotal};
+}
+/* Cross-check: Airbnb-channel bookings only. VRBO/direct are not in this report. */
+function airCross(){
+  if(!AIRBNB)return null;
+  const rows=AIRBNB.homes.map(h=>{
+    const mine=RES.filter(r=>r.channel==='Airbnb'&&normUnit(r.unitCode)===h.key);
+    const computed=r2(mine.reduce((s,r)=>s+taxOf(r).total,0));
+    const gap=r2(h.tax-computed);
+    let status='ok',label='exact';
+    if(!mine.length){status='absent';label='LISTING ABSENT';}
+    else if(h.tax===0&&mine.every(r=>r.tier==='exempt')){status='exempt';label='exempt';}
+    else if(Math.abs(gap)>1){status='short';label='MISSING STAY';}
+    else if(Math.abs(gap)>0.005){status='ok';label='within $1';}
+    return {...h,computed,gap,status,label,count:mine.length};
+  });
+  const shortfall=r2(rows.reduce((s,x)=>s+x.gap,0));
+  const absentPay=r2(rows.filter(x=>x.status==='absent').reduce((s,x)=>s+x.total,0));
+  const nonAir=RES.filter(r=>r.channel!=='Airbnb');
+  return {rows,shortfall,absentPay,nonAir};
+}
+async function handleAir(file){
+  document.getElementById('err').textContent='';
+  try{
+    const buf=await file.arrayBuffer();const lines=await pdfToLines(buf);
+    AIRBNB=parseAirbnb(lines);
+    document.getElementById('dropAir').classList.add('done');
+    updateDropStats();
+    if(RES.length)showResults();
+  }catch(e){AIRBNB=null;document.getElementById('dropAir').classList.remove('done');
+    document.getElementById('err').textContent='Airbnb report not read — '+e.message+'. Nothing was changed; the cross-check stays off.';
+    updateDropStats();}
+}
 async function handlePdf(file){
   document.getElementById('err').textContent='';
   try{const buf=await file.arrayBuffer();const lines=await pdfToLines(buf);parseBank(lines.join('\n'));
@@ -1092,7 +1183,7 @@ function wireDrop(dropId,inputId,handler,accept){
   ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
   drop.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handler(e.dataTransfer.files[0]);});
 }
-wireDrop('dropCsv','fileCsv',handleCsv);wireDrop('dropPdf','filePdf',handlePdf);
+wireDrop('dropCsv','fileCsv',handleCsv);wireDrop('dropPdf','filePdf',handlePdf);wireDrop('dropAir','fileAir',handleAir);
 document.querySelectorAll('.navitem').forEach(n=>n.addEventListener('click',()=>setView(n.dataset.view)));
 document.getElementById('newMonthBtn').addEventListener('click',newMonth);
 document.getElementById('monthSel').addEventListener('change',e=>{const v=e.target.value;if(v&&monthsStore()[v])loadMonth(v);});
