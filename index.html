@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.14.0</title>
+<title>La Quinta TOT Tool — v0.14.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -345,7 +345,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.14.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.14.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -784,8 +784,25 @@ function render(){
   ].map(([l,n,c,jump])=>`<div class="kpi ${c||''} ${jump?'clickable':''}" ${jump?`data-jump="${jump}"`:''}><div class="n">${n}</div><div class="l">${l}${jump?' <span class="kpi-go">→</span>':''}</div></div>`).join('');
   document.querySelectorAll('.kpi.clickable').forEach(k=>k.addEventListener('click',e=>setView(e.currentTarget.dataset.jump)));
   setTimeout(()=>{
-    document.querySelectorAll('.mini.exrow').forEach(b=>b.addEventListener('click',e=>{const c=e.currentTarget.dataset.conf;
-      if(confirm('Remove this booking from the month? It will stop counting toward tax, owner statements and deposits. You can restore it later.'))setExcluded(c,true);}));
+    document.querySelectorAll('.mini.exrow').forEach(b=>b.addEventListener('click',e=>{
+      const c=e.currentTarget.dataset.conf;const r=RES.find(x=>x.conf===c);if(!r)return;
+      const t=taxOf(r).total;const wp=(typeof r.monthPayout==='number'?r.monthPayout:r.payout);
+      const inReport=!!(AIRBNB&&AIRBNB.homes.some(h=>h.key===normUnit(r.unitCode)&&h.total>0));
+      let msg;
+      if(r.channel==='Airbnb'&&inReport&&(t>0.005||wp>0.01)){
+        msg='STOP — this looks like a REAL booking.\n\n'
+          +r.guest+'  ·  '+r.unitCode+'\nConfirmation code: '+(r.confRaw||'—')+'  ('+r.nights+' nts)\n\n'
+          +'It appears in the Airbnb earnings report, so Airbnb treated it as a genuine reservation.\n\n'
+          +'  • Tax you owe the city on it:  '+money(t)+'\n'
+          +'  • Airbnb paid you this month:  '+money(wp)+'\n\n'
+          +'Removing it will leave your city filing '+money(t)+' short and orphan that deposit.\n\n'
+          +'Remove anyway?';
+      } else if(r.cancelled){
+        msg='Remove '+r.guest+' ('+r.unitCode+')?\n\nThis row has no money on it, so it looks like a cancellation — removing it is safe. You can restore it later.';
+      } else {
+        msg='Remove '+r.guest+' ('+r.unitCode+') from the month?\n\nIt will stop counting toward tax, owner statements and deposits. You can restore it later.';
+      }
+      if(confirm(msg))setExcluded(c,true);}));
     document.querySelectorAll('.mini.unexrow').forEach(b=>b.addEventListener('click',e=>setExcluded(e.currentTarget.dataset.conf,false)));
   },0);
 
@@ -803,7 +820,11 @@ function render(){
       recon.push({cls:'',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, <strong>exempt</strong>. Zero return (0 on lines 1–3).${slice}`});}
   });
   if(EXCLUDED.length){const t=r2(EXCLUDED.reduce((a,b)=>a+b.gross,0));
-    recon.unshift({cls:'',html:`<strong>${EXCLUDED.length} row(s) you marked as not real bookings</strong> — ${money(t)} excluded from tax, owner statements and deposits: ${EXCLUDED.map(r=>`${r.guest} / ${r.unitCode} <button class="mini unexrow" data-conf="${r.conf}">restore</button>`).join(' &nbsp;·&nbsp; ')}`});}
+    const risky=EXCLUDED.filter(r=>r.channel==='Airbnb'&&AIRBNB&&AIRBNB.homes.some(h=>h.key===normUnit(r.unitCode)&&h.total>0)&&!r.cancelled);
+    const list=EXCLUDED.map(r=>{const bad=risky.includes(r);
+      return `${bad?'<span class="flagtag">REAL BOOKING</span> ':''}${r.guest} / ${r.unitCode} <button class="mini unexrow" data-conf="${r.conf}">restore</button>`;}).join(' &nbsp;·&nbsp; ');
+    const warn=risky.length?`<div style="margin-top:6px"><strong>${risky.length} of these appear in the Airbnb earnings report</strong> — Airbnb collected tax on them and paid you, so they are almost certainly real. Restore them unless you are sure.</div>`:'';
+    recon.unshift({cls:risky.length?'over':'',html:`<strong>${EXCLUDED.length} row(s) you marked as not real bookings</strong> — ${money(t)} excluded from tax, owner statements and deposits: ${list}${warn}`});}
   if(INQUIRIES.length){const t=r2(INQUIRIES.reduce((a,b)=>a+b.payout,0));
     recon.unshift({cls:'',html:`<strong>${INQUIRIES.length} row(s) with no confirmation code were ignored</strong> &mdash; ${money(t)} of quoted value. Guesty exports inquiries and quotes alongside real bookings; only rows with a confirmation code count as reservations.`});}
   const oddCh=RES.filter(r=>r.channel!=='Airbnb'&&!r.cancelled);
