@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.12.1</title>
+<title>La Quinta TOT Tool — v0.13.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -249,7 +249,7 @@
           <div class="gstep"><span class="gnum">6</span><span>Check each unit&rsquo;s tier:</span></div>
           <div class="gtiers">
             <div><span class="badge b-full">&le;26 nights</span> Standard 11% form (10% TOT + 1% TBID).</div>
-            <div><span class="badge b-tot">27&ndash;29 nights</span> Separate TOT-only form (10%, no TBID) &mdash; email <b>vacationlq@laquintaca.gov</b>.</div>
+            <div><span class="badge b-tot">28&ndash;29 nights</span> No TBID due &mdash; 10% TOT only, on a <b>Non-TBID TOT form</b> requested from <b>vacationlq@laquintaca.gov</b>.</div>
             <div><span class="badge b-ex">30+ nights</span> Exempt &mdash; file a zero return (0 on lines 1&ndash;3).</div>
           </div>
         </div>
@@ -267,7 +267,7 @@
         </div>
 
         <div class="gphase"><div class="gph-title">Phase 7 &middot; File &amp; pay the city</div>
-          <div class="gstep"><span class="gnum">10</span><span>Go to <b>laquinta.munirevs.com</b> &rarr; Business Center. File and pay each unit ($1 ACH). Standard form for &le;26-night stays; TOT-only form for 27&ndash;29; zero return for 30+.</span></div>
+          <div class="gstep"><span class="gnum">10</span><span>Go to <b>laquinta.munirevs.com</b> &rarr; Business Center. File and pay each unit ($1 ACH). Standard form for &le;27-night stays; Non-TBID TOT form for 28&ndash;29; zero return for 30+.</span></div>
           <div class="gnote">Deadline: file and pay by the <b>end of the following month</b>. (Confirm against MuniRevs for your units.)</div>
         </div>
 
@@ -345,7 +345,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.12.1 &middot; working aid, not tax advice &middot; tiers: &le;26 nts 11% &middot; 27&ndash;29 nts 10% (separate form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.13.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -635,8 +635,10 @@ function renderOwnerReports(){
 const r2=v=>Math.round((v+Number.EPSILON)*100)/100;
 const money=v=>'$'+(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const numify=x=>{const n=parseFloat(String(x==null?'':x).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;};
-function tierOf(n){if(n>=30)return'exempt';if(n>=27)return'tot';return'full';}
-function tierLabel(t){return t==='exempt'?'Exempt (30+ nts)':t==='tot'?'TOT-only (27–29 nts)':'Full 11% (≤26 nts)';}
+/* City: TBID 1% applies to stays of 27 days or less. 28 up to 30 days = no TBID,
+   10% TOT still due on a Non-TBID TOT form. 30+ = exempt. */
+function tierOf(n){if(n>=30)return'exempt';if(n>=28)return'tot';return'full';}
+function tierLabel(t){return t==='exempt'?'Exempt (30+ nts)':t==='tot'?'TOT-only 10% (28–29 nts)':'Full 11% (≤27 nts)';}
 function tierBadge(t){const c=t==='exempt'?'b-ex':t==='tot'?'b-tot':'b-full';return `<span class="badge ${c}">${tierLabel(t)}</span>`;}
 function parseDate(s){const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})/);return m?new Date(+m[1],+m[2]-1,+m[3]):null;}
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -659,7 +661,7 @@ function buildRes(rows){
     const commission=numify(pick(row,['CHANNEL COMMISSION']));
     /* Guesty's ACCOMMODATION FARE is the pre-discount list rate and misses extensions.
        Airbnb payout = base x (1+rate) - commission, so base = (payout+commission)/(1+rate). */
-    const rateOf=t=>t==='full'?1.11:(t==='tot'?1.10:1);
+    const rateOf=t=>t==='exempt'?1:1.11;
     const isAir=/^HM/i.test(String(pick(row,['CONFIRMATION CODE'])||'').trim());
     const airbnbBase=(isAir&&payout>0&&commission>0&&tier!=='exempt')?r2((payout+commission)/rateOf(tier)):0;
     const disc=airbnbBase&&Math.abs(airbnbBase-gross)>1;
@@ -727,7 +729,7 @@ function render(){
   const recon=[];
   RES.forEach(r=>{
     if(r.tier==='tot'&&r.airbnbTax>0){const t=taxOf(r),d=r2(r.airbnbTax-t.total);
-      recon.push({cls:'over',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts, TOT-only. Airbnb collected ${money(r.airbnbTax)} (11%); city owed ${money(t.total)} (10%). Over-collected ${money(d)} TBID → file the TOT-only form; set aside/refund per the city. (Fix Guesty/Airbnb tax settings so 27+ nt stays skip the 1% TBID.)`});}
+      recon.push({cls:'over',html:`<strong>${r.unitCode} · ${r.guest}</strong> — ${r.nights} nts. No TBID is due on stays of 28 up to 30 days, but the 10% TOT still is: <strong>${money(t.total)}</strong>. Airbnb charged the guest the full 11% (${money(r.airbnbTax)}), over-collecting the ${money(d)} TBID portion. Request a <strong>Non-TBID TOT form</strong> from vacationlq@laquintaca.gov; set aside or refund the ${money(d)} per the city. Fix the listing's Airbnb tax settings so 28+ nt stays skip the 1%.`});}
     if(r.disc){const gd=r2(r.gross-r.airbnbBase);
       // is the delta a separate Airbnb deposit? (e.g. added pet fee)
       const petDep=DEPOSITS.find(x=>Math.abs(x.amt-gd)<2);
@@ -789,7 +791,7 @@ function render(){
       const [fm,tier]=key.split('||');
       const count=tier==='exempt'?0:g.length,nights=tier==='exempt'?0:g.reduce((s,r)=>s+r.nights,0),base=tier==='exempt'?0:r2(g.reduce((s,r)=>s+r.filedBase,0));
       const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});
-      const form=tier==='full'?'Standard TOT form (11%)':tier==='tot'?'Separate TOT-only form — email vacationlq@laquintaca.gov':'Zero return (0 on lines 1–3)';
+      const form=tier==='full'?'Standard TOT form (11%)':tier==='tot'?'Non-TBID TOT form (10%, no TBID) — request from vacationlq@laquintaca.gov':'Zero return (0 on lines 1–3)';
       boxes+=`<div class="filebox ${tier==='full'?'full':tier==='tot'?'tot':'ex'}"><div class="ttl">${fm} — ${form}</div><div class="lines">
         <div><div class="lab">Reservations</div><div class="val">${count}</div></div>
         <div><div class="lab">Nights</div><div class="val">${nights}</div></div>
@@ -897,7 +899,7 @@ function unitSheetAoa(code,list){
   aoa.push([],['FILING SUMMARY (enter on MuniRevs)']);
   for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
     const tier=key.split('||')[1];
-    const form=tier==='full'?'Standard TOT form (11%)':tier==='tot'?'Separate TOT-only form':'Zero return (0 on lines 1-3)';
+    const form=tier==='full'?'Standard TOT form (11%)':tier==='tot'?'Non-TBID TOT form (10%)':'Zero return (0 on lines 1-3)';
     const count=tier==='exempt'?0:g.length,nights=tier==='exempt'?0:g.reduce((s,r)=>s+r.nights,0),base=tier==='exempt'?0:r2(g.reduce((s,r)=>s+r.filedBase,0));
     const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});
     aoa.push([form],['  Line 1 Reservations',count],['  Line 2 Nights',nights],['  Line 3 Rent collected',base],['  TOT (10%)',r2(tt.tot)],['  TBID (1%)',r2(tt.tbid)],['  Total due',r2(tt.total)],[]);
