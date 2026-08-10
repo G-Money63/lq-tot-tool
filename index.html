@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.14.1</title>
+<title>La Quinta TOT Tool — v0.15.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -345,7 +345,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.14.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.15.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -447,8 +447,8 @@ function importOwnersCsv(file){
   }});
 }
 function computeOwner(u){
-  const rs=RES.filter(r=>r.unitCode===u);
-  const gross=r2(rs.reduce((s,r)=>s+r.gross,0));
+  const rs=monthRes().filter(r=>r.unitCode===u);
+  const gross=r2(rs.reduce((s,r)=>s+(typeof r.monthGross==='number'?r.monthGross:r.gross),0));
   const payoutTot=r2(rs.reduce((s,r)=>s+(typeof r.monthPayout==='number'?r.monthPayout:r.payout),0));
   const tax=r2(rs.reduce((s,r)=>s+taxOf(r).total,0));
   const confs=rs.map(r=>r.conf);
@@ -456,7 +456,7 @@ function computeOwner(u){
   received=r2(received);
   const hasDeposits=DEPOSITS.length>0;
   const R=hasDeposits?received:payoutTot;
-  const monthGross=payoutTot>0?r2(gross*(R/payoutTot)):gross;
+  const monthGross=gross;
   const cfg=unitCfg(u);
   const mgmtFee=r2(monthGross*((+cfg.mgmt||0)/100));
   const pms=+cfg.pms||0,pricing=+cfg.pricing||0;
@@ -596,9 +596,11 @@ function emailStatement(u){const o=computeOwner(u);const to=o.owners.map(x=>x.em
   const body=encodeURIComponent(`Hi,\n\nHere is your ${CURMONTH} statement for ${u}.\n\nDistribution deposited to your account: ${money(o.distribution)}\nCity tax + expenses paid from your account: ${money(o.ownerPaid)}\nNet after expenses: ${money(o.ownerNet)}\n\nThe full statement is attached (print or save it as PDF from the tool and attach it here).\n\nBest,\nGary Rubens\nLa Quinta Resort Management, LLC`);
   location.href=`mailto:${to}?subject=${subj}&body=${body}`;}
 function ownerAoa(u){const o=computeOwner(u);const rs=o.rs.slice().sort((a,b)=>(a.ci&&b.ci?a.ci-b.ci:0));
-  const a=[['Owner statement'],['Property',u],['Owners',o.owners.map(x=>x.name).join(', ')],['Month',rs[0]?rs[0].filingMonth:CURMONTH],[],['Guest','Dates','Nights','Accommodation fare']];
-  rs.forEach(r=>a.push([r.guest,(r.ci?r.ci.toLocaleDateString('en-US'):'')+'–'+(r.co?r.co.toLocaleDateString('en-US'):''),r.nights,r.accom]));
-  a.push(['Cleaning fees','','',r2(rs.reduce((s,r)=>s+r.clean,0))],['Pet fees','','',r2(rs.reduce((s,r)=>s+r.pet,0))],['Gross booking','','',o.gross],[],
+  const a=[['Owner statement'],['Property',u],['Owners',o.owners.map(x=>x.name).join(', ')],['Month',curMonthName()],[],['Guest','Dates','Nights','Revenue this month']];
+  rs.forEach(r=>{const mg=(typeof r.monthGross==='number'?r.monthGross:r.gross);
+    const lbl=(r.nights>=30&&Math.abs(mg-r.gross)>1)?' (long stay — this month\u2019s portion)':'';
+    a.push([r.guest+lbl,(r.ci?r.ci.toLocaleDateString('en-US'):'')+'–'+(r.co?r.co.toLocaleDateString('en-US'):''),r.nights,mg]);});
+  a.push(['Gross booking revenue','','',o.gross],[],
     ['Received from Airbnb',o.R],['Management fee ('+o.cfg.mgmt+'%)',-o.mgmtFee],['PMS + pricing',-(r2(o.pms+o.pricing))]);
   o.manMgmtList.forEach(e=>a.push([e.desc||'expense (you charge)',-(+e.amount||0)]));
   a.push(['Distribution deposited',o.distribution],['City tax (TOT)',-o.tax]);
@@ -716,7 +718,21 @@ function applyMonthPayouts(){
     if(pend.length===1)pend[0].monthPayout=Math.max(0,residual);
     else if(pend.length>1){const tp=pend.reduce((a,b)=>a+b.payout,0)||1;pend.forEach(r=>r.monthPayout=r2(Math.max(0,residual)*r.payout/tp));}
   });
+  RES.forEach(r=>{
+    const wp=(typeof r.monthPayout==='number'?r.monthPayout:r.payout);
+    const fare=(r.channel==='Airbnb'&&r.payout>0)?r2((r.payout+(r.commission||0))/(r.tier==='exempt'?1:1.11)):r.gross;
+    r.monthGross=r.payout>0?r2(fare*(wp/r.payout)):(wp>0?r.gross:0);
+  });
 }
+/* Revenue is earned when a stay BEGINS, so a short booking belongs to its check-in month even
+   if it runs into the next one. A 30+ night stay is billed monthly, so it belongs to any month
+   Airbnb actually paid for it. */
+function inFilingMonth(r,M){
+  if(r.filingMonth===M)return true;
+  if(r.nights>=30)return ((typeof r.monthPayout==='number'?r.monthPayout:r.payout)>0.01);
+  return false;
+}
+function monthRes(M){M=M||curMonthName();return RES.filter(r=>inFilingMonth(r,M));}
 function excludedStore(){return lget(LS_EXCL);}
 function applyExclusions(){const ex=excludedStore();const keep=[];EXCLUDED=[];
   RES.forEach(r=>{if(ex[r.conf]){r.excluded=true;EXCLUDED.push(r);}else keep.push(r);});RES=keep;}
@@ -981,42 +997,52 @@ function render(){
 }
 
 /* ---------- Excel ---------- */
+/* City report: one consistent rent figure only. Guesty/Airbnb working columns are deliberately
+   left out — showing three bases that disagree invites questions the city does not need asked. */
 function unitSheetAoa(code,list){
-  const name=list[0].unitName||'',fm=list[0].filingMonth;
-  const aoa=[['La Quinta TOT Booking Report'],['Unit',code],['Property',name],['Filing period',fm],[],
-    ['Guest','Confirmation','Check-in','Check-out','Nights','Tier','Accommodation','Cleaning','Pet','Guesty base','Airbnb base','Filed base','TOT 10%','TBID 1%','Total tax','Note']];
-  list.forEach(r=>{const t=taxOf(r);aoa.push([r.guest,r.conf,r.ci?r.ci.toLocaleDateString('en-US'):'',r.co?r.co.toLocaleDateString('en-US'):'',r.nights,tierLabel(r.tier),r.accom,r.clean,r.pet,r.gross,r.airbnbBase,r.tier==='exempt'?0:r.filedBase,t.tot,t.tbid,t.total,r.note||'']);});
+  const name=list[0].unitName||'';
+  const taxable=list.filter(r=>r.tier!=='exempt');
+  const aoa=[['La Quinta TOT Booking Report'],['Unit',code],['Property',name],['Filing period',curMonthName()],[],
+    ['Guest','Confirmation','Check-in','Check-out','Nights','Rent collected','TOT 10%','TBID 1%','Total tax','Note']];
+  taxable.forEach(r=>{const t=taxOf(r);aoa.push([r.guest,r.confRaw||r.conf,r.ci?r.ci.toLocaleDateString('en-US'):'',r.co?r.co.toLocaleDateString('en-US'):'',r.nights,r2(r.filedBase),t.tot,t.tbid,t.total,r.note||'']);});
+  if(!taxable.length)aoa.push(['(no taxable rental activity this period)','','','','',0,0,0,0,'']);
   aoa.push([],['FILING SUMMARY (enter on MuniRevs)']);
-  for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
-    const tier=key.split('||')[1];
-    const form=tier==='full'?'Standard TOT form (11%)':tier==='tot'?'Non-TBID TOT form (10%)':'Zero return (0 on lines 1-3)';
-    const count=tier==='exempt'?0:g.length,nights=tier==='exempt'?0:g.reduce((s,r)=>s+r.nights,0),base=tier==='exempt'?0:r2(g.reduce((s,r)=>s+r.filedBase,0));
+  const byTier=groupBy(taxable,r=>r.tier);
+  if(!taxable.length){
+    aoa.push(['No Rental Activity — submit the certification form, then enter zeros on the La Quinta form'],
+      ['  Line 1 Reservations',0],['  Line 2 Nights',0],['  Line 3 Rent collected',0],['  TOT (10%)',0],['  TBID (1%)',0],['  Total due',0],['  Check out at',0],[]);
+  } else for(const [tier,g] of byTier){
+    const form=tier==='full'?'Standard TOT form (11%)':'Non-TBID TOT form (10%, no TBID)';
     const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});
-    aoa.push([form],['  Line 1 Reservations',count],['  Line 2 Nights',nights],['  Line 3 Rent collected',base],['  TOT (10%)',r2(tt.tot)],['  TBID (1%)',r2(tt.tbid)],['  Total due',r2(tt.total)],[]);
+    aoa.push([form],['  Line 1 Reservations',g.length],['  Line 2 Nights',g.reduce((s,r)=>s+r.nights,0)],
+      ['  Line 3 Rent collected',r2(g.reduce((s,r)=>s+r.filedBase,0))],['  TOT (10%)',r2(tt.tot)],['  TBID (1%)',r2(tt.tbid)],['  Total due',r2(tt.total)],[]);
   }
+  const longs=list.filter(r=>r.tier==='exempt');
+  if(longs.length)aoa.push(['Long-term stays this period (30+ nights, exempt — no tax, not listed above)'],
+    ...longs.map(r=>['  '+r.guest,r.nights+' nts',(r.ci?r.ci.toLocaleDateString('en-US'):'')+'–'+(r.co?r.co.toLocaleDateString('en-US'):'')]));
   return aoa;
 }
 const safeName=s=>s.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31)||'Unit';
-function downloadUnit(code){const list=RES.filter(r=>r.unitCode===code);if(!list.length)return;const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));XLSX.writeFile(wb,`${code} ${list[0].filingMonth} TOT Report.xlsx`.replace(/\s+/g,'_'));}
+function downloadUnit(code){const list=monthRes().filter(r=>r.unitCode===code);if(!list.length)return;const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));XLSX.writeFile(wb,`${code} ${curMonthName()} TOT Report.xlsx`.replace(/\s+/g,'_'));}
 function downloadMaster(){
   const wb=XLSX.utils.book_new();
   const sum=[['La Quinta TOT — Master Summary'],['Generated',new Date().toLocaleString('en-US')],[],
     ['Unit','Property','Period','Reservations','Nights','Rent collected','TOT','TBID','Total due','Filing type']];
-  let gT=0;
-  for(const [code,list] of groupBy(RES,r=>r.unitCode))for(const [key,g] of groupBy(list,r=>r.filingMonth+'||'+r.tier)){
-    const tier=key.split('||')[1],fm=key.split('||')[0];
+  let gT=0;const MR=monthRes();
+  for(const [code,list] of groupBy(MR,r=>r.unitCode))for(const [key,g] of groupBy(list,r=>r.tier)){
+    const tier=key,fm=curMonthName();
     const count=tier==='exempt'?0:g.length,nights=tier==='exempt'?0:g.reduce((s,r)=>s+r.nights,0),base=tier==='exempt'?0:r2(g.reduce((s,r)=>s+r.filedBase,0));
     const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});gT+=r2(tt.total);
-    sum.push([code,list[0].unitName||'',fm,count,nights,base,r2(tt.tot),r2(tt.tbid),r2(tt.total),tier==='full'?'Standard 11%':tier==='tot'?'TOT-only form':'Zero return']);
+    sum.push([code,list[0].unitName||'',fm,count,nights,base,r2(tt.tot),r2(tt.tbid),r2(tt.total),tier==='full'?'Standard 11%':tier==='tot'?'Non-TBID TOT 10%':'No Rental Activity — zeros']);
   }
   sum.push([],['','','','','','','','','TOTAL',r2(gT)]);
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),'Summary');
-  for(const [code,list] of groupBy(RES,r=>r.unitCode))XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));
+  for(const [code,list] of groupBy(MR,r=>r.unitCode))XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(unitSheetAoa(code,list)),safeName(code));
   if(DEPOSITS.length){const d=[['Airbnb deposits & allocations'],['Date','Ref','Channel','Deposit amount','Allocated to','Alloc amount']];
     DEPOSITS.forEach(x=>{if(!x.allocs||!x.allocs.length){d.push([x.date,x.ref,x.channel||'',x.amt,'(unallocated)','']);}
       else x.allocs.forEach(a=>{const r=RES.find(y=>y.conf===a.conf);d.push([x.date,x.ref,x.channel||'',x.amt,a.conf?(r?r.unitCode+' '+r.guest:a.conf):(a.custom||'other'),a.amt]);});});
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(d),'Deposits');}
-  XLSX.writeFile(wb,`LaQuinta_TOT_Master_${RES[0]?RES[0].filingMonth.replace(/\s+/g,'_'):'export'}.xlsx`);
+  XLSX.writeFile(wb,`LaQuinta_TOT_Master_${curMonthName().replace(/\s+/g,'_')}.xlsx`);
 }
 
 /* ---------- file handling ---------- */
