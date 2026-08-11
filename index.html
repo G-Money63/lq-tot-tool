@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.21.2</title>
+<title>La Quinta TOT Tool — v0.22.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.12.1/html2pdf.bundle.min.js"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
@@ -377,7 +377,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.21.2 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.22.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -746,43 +746,6 @@ function statementSheet(u){
 }
 function openPrint(body){const w=window.open('','_blank');if(!w){alert('Allow pop-ups to print.');return;}w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Owner statement</title><style>'+STATEMENT_CSS+'</style></head><body>'+body+'</body></html>');w.document.close();setTimeout(()=>{w.focus();w.print();},400);}
 function printStatement(u){openPrint(statementSheet(u));}
-/* Real PDF file so it can be attached to an email.
-   html2canvas crops to the element's page coordinates, so the source must sit at a real
-   on-screen position — rendering it off-screen produces a blank page. We show it at 0,0
-   under a cover sheet for the second it takes to capture. */
-function pdfHost(html){
-  const cover=document.createElement('div');
-  cover.style.cssText='position:fixed;inset:0;background:rgba(20,28,36,.85);z-index:2147483646;display:flex;align-items:center;justify-content:center;color:#fff;font:600 16px Arial,sans-serif';
-  cover.textContent='Building PDF…';
-  const host=document.createElement('div');
-  host.className='pdfhost';
-  host.style.cssText='position:absolute;top:0;left:0;width:1040px;background:#fff;z-index:1';
-  host.innerHTML=html;
-  document.body.appendChild(host);document.body.appendChild(cover);
-  window.scrollTo(0,0);
-  return {host,cover,done(){host.remove();cover.remove();}};
-}
-function pdfOpts(name,perPage){return {margin:[8,8,8,8],filename:name,
-  image:{type:'jpeg',quality:0.98},
-  html2canvas:{scale:2,backgroundColor:'#ffffff',useCORS:true,scrollX:0,scrollY:0,windowWidth:1100},
-  jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},
-  pagebreak:perPage?{mode:['css','legacy'],before:'.orpt'}:{mode:['css','legacy']}};}
-function buildPdf(html,name,btn,perPage){
-  if(typeof html2pdf!=='function'){
-    alert('The PDF library did not load — opening the print dialog instead. Choose “Save as PDF” there.');
-    openPrint(html);return;
-  }
-  const label=btn?btn.textContent:'';
-  if(btn){btn.disabled=true;btn.textContent='Building…';}
-  const h=pdfHost(html);
-  const finish=()=>{h.done();if(btn){btn.disabled=false;btn.textContent=label;}};
-  setTimeout(()=>{
-    html2pdf().set(pdfOpts(name,perPage)).from(h.host).save()
-      .then(finish)
-      .catch(e=>{finish();alert('Could not build the PDF ('+(e&&e.message||e)+') — opening the print dialog instead.');openPrint(html);});
-  },120);
-}
-/* v0.8.4 — on-screen statement preview */
 function showStatementModal(bodyHtml){
   const modal=document.getElementById('stmtModal'),frame=document.getElementById('stmtFrame');
   const doc=frame.contentWindow.document;
@@ -794,13 +757,124 @@ function viewAllStatements(){showStatementModal([...new Set(monthRes().map(r=>r.
 function closeStmtModal(){document.getElementById('stmtModal').classList.add('hidden');}
 function printStatementFrame(){const f=document.getElementById('stmtFrame');f.contentWindow.focus();f.contentWindow.print();}
 function printAllStatements(){openPrint([...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join(''));}
-function pdfStatement(u,btn){
-  buildPdf(statementSheet(u),`Owner_Report_${safeName(u)}_${curMonthName().replace(/\s+/g,'_')}.pdf`,btn,false);
+/* PDF drawn directly with pdf-lib. html2canvas produced blank pages, and pdf-lib is already
+   embedded for the city forms, so this needs no CDN and renders deterministically. */
+const PDF_PT={W:612,H:792,M:36,GAP:24};
+function pdfMoney(v){return '$'+Number(v||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+async function buildOwnerPdfDoc(units){
+  const {PDFDocument,StandardFonts,rgb}=PDFLib;
+  const doc=await PDFDocument.create();
+  const F=await doc.embedFont(StandardFonts.Helvetica);
+  const B=await doc.embedFont(StandardFonts.HelveticaBold);
+  let logoImg=null;
+  try{if(LOGO&&LOGO.indexOf('image/jpeg')>0)logoImg=await doc.embedJpg(LOGO);}catch(e){}
+  const line=rgb(.15,.15,.15),ink=rgb(.09,.11,.14),grey=rgb(.35,.39,.44);
+  const green=rgb(.886,.937,.855),amber=rgb(.992,.914,.816),head=rgb(.949,.965,.976),red=rgb(.643,.137,.169);
+  for(const u of units){
+    const o=computeOwner(u);if(!o)continue;
+    const c=unitCfg(u),fm=curMonthName();
+    let page=doc.addPage([PDF_PT.W,PDF_PT.H]);
+    const CW=PDF_PT.W-PDF_PT.M*2, colW=(CW-PDF_PT.GAP)/2;
+    const LX=PDF_PT.M, RX=PDF_PT.M+colW+PDF_PT.GAP;
+    let y=PDF_PT.H-PDF_PT.M;
+    const txt=(t,x,yy,sz,fnt,col)=>page.drawText(String(t),{x,y:yy,size:sz,font:fnt||F,color:col||ink});
+    const wid=(t,sz,fnt)=>(fnt||F).widthOfTextAtSize(String(t),sz);
+    const box=(x,yy,w,h,fill)=>{if(fill)page.drawRectangle({x,y:yy,width:w,height:h,color:fill});
+      page.drawRectangle({x,y:yy,width:w,height:h,borderColor:line,borderWidth:.6});};
+    const row=(x,yy,w,label,val,opts)=>{opts=opts||{};const h=13,s2=opts.sz||7.6;
+      box(x,yy-h,w,h,opts.fill);const f=opts.bold?B:F;
+      let lbl=String(label);while(wid(lbl,s2,f)>w-(val!==undefined?wid(String(val),s2,B)+14:8)&&lbl.length>6)lbl=lbl.slice(0,-2);
+      txt(lbl,x+3,yy-h+3.8,s2,f);
+      if(val!==undefined)txt(val,x+w-3-wid(val,s2,opts.bold?B:F),yy-h+3.8,s2,opts.bold?B:F,opts.valCol||ink);
+      return yy-h;};
+    if(logoImg){const lw=132,lh=logoImg.height/logoImg.width*lw;
+      page.drawImage(logoImg,{x:(PDF_PT.W-lw)/2,y:y-lh,width:lw,height:lh});y-=lh+6;}
+    txt('Owner Report',(PDF_PT.W-wid('Owner Report',19,F))/2,y-16,19,F);y-=26;
+    [['Month',fm],['Owners',(o.owners||[]).map(x=>x.name).filter(Boolean).join(', ')||'\u2014'],
+     ['Property',c.addr||(o.rs[0]&&o.rs[0].unitName)||u]].forEach(function(p2){
+      const l=p2[0],v=String(p2[1]);const h=16;box(LX,y-h,CW*0.34,h);box(LX+CW*0.34,y-h,CW*0.66,h);
+      txt(l,LX+4,y-h+4.8,8.4,B);
+      let vv=v;while(wid(vv,8.6,F)>CW*0.66-8&&vv.length>6)vv=vv.slice(0,-2);
+      txt(vv,LX+CW*0.34+(CW*0.66-wid(vv,8.6,F))/2,y-h+4.8,8.6,F);y-=h;});
+    y-=12;
+    let ly=y,ry=y;
+    const sect=(x,yy,t)=>{txt(t,x,yy-9,8.6,B);page.drawLine({start:{x:x,y:yy-11.5},end:{x:x+wid(t,8.6,B),y:yy-11.5},thickness:.7,color:line});return yy-15;};
+    ly=sect(LX,ly,'Booking Revenue');
+    const cw=[colW*0.40,colW*0.20,colW*0.26,colW*0.14];
+    {const h=12;let cx=LX;['GUEST','AMOUNT','BOOKING DATES','# OF DAYS'].forEach((t,i)=>{box(cx,ly-h,cw[i],h,head);
+      txt(t,i?cx+cw[i]-3-wid(t,6.2,B):cx+3,ly-h+3.6,6.2,B,grey);cx+=cw[i];});ly-=h;}
+    const rs=o.rs.slice().sort((a2,b2)=>(a2.ci&&b2.ci?a2.ci-b2.ci:0));
+    const dstr=r=>(r.ci?r.ci.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')+'\u2013'+(r.co?r.co.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'');
+    if(!rs.length){const h=13;box(LX,ly-h,colW,h);txt('No bookings this period',LX+3,ly-h+3.8,7.4,F,grey);ly-=h;}
+    rs.forEach(r=>{const h=13;let cx=LX;
+      const vals=[r.guest,pdfMoney(typeof r.monthAccom==='number'?r.monthAccom:r.gross),dstr(r),String(r.nights>=30?nightsInMonth(r,fm):r.nights)];
+      vals.forEach((t,i)=>{box(cx,ly-h,cw[i],h);
+        let str=String(t);const sz=7.2;
+        while(wid(str,sz,F)>cw[i]-6&&str.length>4)str=str.slice(0,-2);
+        txt(str,i===0?cx+3:cx+cw[i]-3-wid(str,sz,F),ly-h+3.8,sz);cx+=cw[i];});ly-=h;});
+    {const h=13;let cx=LX;const vals=['Total',pdfMoney(o.accomRev),'Total Days',String(o.bookedNights)];
+      vals.forEach((t,i)=>{box(cx,ly-h,cw[i],h,(i===1||i===3)?green:null);
+        txt(t,(i===0||i===2)?cx+3:cx+cw[i]-3-wid(t,7.2,B),ly-h+3.8,7.2,B);cx+=cw[i];});ly-=h;}
+    ly-=6;
+    ly=sect(LX,ly,'Other Revenue');
+    [['Owner Stay Revenue',orptNum(u,'ownerStay')],['Cleaning Fees',o.autoClean],['Mid Stay Cleaning fees',orptNum(u,'midClean')],
+     ['Pet Fees',o.autoPet],['Direct Booking Fees',orptNum(u,'directFees')],['Early Check in / Late Check out fee',orptNum(u,'earlyLate')],
+     ['Concierge Services',orptNum(u,'concierge')],['Damage Fees',orptNum(u,'damage')],['Cancellation Fees',orptNum(u,'cancelFees')],
+     ['Other Income',orptNum(u,'otherInc')]].forEach(function(p3){ly=row(LX,ly,colW,p3[0],pdfMoney(p3[1]),{sz:7.2});});
+    ly=row(LX,ly,colW,'Total',pdfMoney(o.otherRev),{bold:true,fill:green});
+    ly-=8;
+    ly=row(LX,ly,colW,'Gross Revenue',pdfMoney(o.grossRev),{bold:true,fill:green});
+    ly=row(LX,ly,colW,'Less Expenses (Not Paid by Owner Bank or CC)',pdfMoney(o.mgmtExpTot),{bold:true,fill:amber,valCol:red,sz:6.8});
+    ly=row(LX,ly,colW,'La Quinta Taxes Collected (to be Paid)',pdfMoney(o.tax),{bold:true,fill:green,sz:6.8});
+    ly=row(LX,ly,colW,'Gross Distribution includes (Taxes to be Paid)',pdfMoney(o.grossDist),{bold:true,fill:green,sz:6.6});
+    txt('Amount deposited to your account, including '+pdfMoney(o.tax)+' city tax collected',LX,ly-8,6,F,grey);
+    txt('from guests, which is paid to La Quinta from your account.',LX,ly-15,6,F,grey);ly-=22;
+    ly=row(LX,ly,colW,'Number of days in Month',String(o.days));
+    ly=row(LX,ly,colW,'Occupancy Ratio',o.occRatio.toFixed(2)+'%');
+    ly=row(LX,ly,colW,'Average Nightly Rate',pdfMoney(o.adr));
+    ry=sect(RX,ry,'Expenses (Paid by Owner Bank or CC)');
+    [['La Quinta Muni Revs Tourist Taxes (11%)',o.tax],['Cleaning Fees (with Turno Fees)',orptNum(u,'oClean')],
+     ['Booking Platform Fees (Air BNB /VRBO)',o.platformFees],['Payment processing fees',orptNum(u,'oPay')],
+     ['Property Management Software Fee (Per listing)',orptNum(u,'oPms')],['Dynamic Pricing Software Fee (Per listing)',orptNum(u,'oPrice')],
+     ['Maintenance & Repairs',orptNum(u,'oMaint')],['Furnishings - new or replacement',orptNum(u,'oFurn')],
+     ['Expendables (Soap, TP, Amenities, Water, etc)',orptNum(u,'oExpend')]].forEach(function(p4){ry=row(RX,ry,colW,p4[0],pdfMoney(p4[1]),{sz:6.8});});
+    ry=row(RX,ry,colW,'Total',pdfMoney(o.ownerExpTot),{bold:true,fill:amber,valCol:red});
+    txt('Platform fees are deducted by Airbnb before payout.',RX,ry-8,6,F,grey);ry-=14;
+    ry=sect(RX,ry,'Expenses (NOT Paid by Owner Bank or CC)');
+    [['Property Management Fees (of Gross Revenue)',o.mgmtFee],['Cleaning Fees (with Turno Fees)',orptNum(u,'mClean')],
+     ['Payment processing fees',orptNum(u,'mPay')],['Property Management Software Fee (Per listing)',o.pms],
+     ['Dynamic Pricing Software Fee (Per listing)',o.pricing],['Maintenance & Repairs',orptNum(u,'mMaint')],
+     ['Furnishings - new or replacement',orptNum(u,'mFurn')],['Expendables (Soap, TP, Amenities, Water, etc)',orptNum(u,'mExpend')]]
+      .forEach(function(p5){ry=row(RX,ry,colW,p5[0],pdfMoney(p5[1]),{sz:6.8});});
+    ry=row(RX,ry,colW,'Total',pdfMoney(o.mgmtExpTot),{bold:true,fill:amber,valCol:red});
+    ry-=8;
+    ry=row(RX,ry,colW,'Total Expenses',pdfMoney(o.totalExp),{bold:true,fill:amber,valCol:red});
+    ry=row(RX,ry,colW,'Gross Revenue + Taxes Collected - Expenses = Net Income',pdfMoney(o.netIncome),{bold:true,fill:green,sz:6.2});
+    let ny=Math.min(ly,ry)-14;
+    const nh=42;box(LX,ny-nh,CW,nh);
+    page.drawLine({start:{x:LX,y:ny-16},end:{x:LX+CW,y:ny-16},thickness:.6,color:line});
+    txt('Notes / Issues:',LX+4,ny-12,9,B);
+    if(o.notes){let n=String(o.notes);while(wid(n,7.6,F)>CW-10&&n.length>6)n=n.slice(0,-2);
+      txt(n,LX+4,ny-30,7.6,F);}
+  }
+  return doc;
 }
-function pdfAllStatements(btn){
-  const units=[...new Set(monthRes().map(r=>r.unitCode))].sort();
-  buildPdf(units.map(statementSheet).join(''),`Owner_Reports_${curMonthName().replace(/\s+/g,'_')}.pdf`,btn,true);
+async function downloadOwnerPdf(units,name,btn){
+  const label=btn?btn.textContent:'';
+  if(typeof PDFLib==='undefined'){alert('PDF library not loaded \u2014 opening the print dialog instead.');
+    openPrint(units.map(statementSheet).join(''));return;}
+  if(btn){btn.disabled=true;btn.textContent='Building\u2026';}
+  try{
+    const doc=await buildOwnerPdfDoc(units);
+    const bytes=await doc.save();
+    const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
+    const a=document.createElement('a');a.href=url;a.download=name;
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
+  }catch(e){alert('Could not build the PDF: '+(e&&e.message||e));}
+  if(btn){btn.disabled=false;btn.textContent=label;}
 }
+function pdfStatement(u,btn){downloadOwnerPdf([u],'Owner_Report_'+safeName(u)+'_'+curMonthName().replace(/ /g,'_')+'.pdf',btn);}
+function pdfAllStatements(btn){downloadOwnerPdf([...new Set(monthRes().map(r=>r.unitCode))].sort(),'Owner_Reports_'+curMonthName().replace(/ /g,'_')+'.pdf',btn);}
 function emailStatement(u){
   const o=computeOwner(u);const c=unitCfg(u);const fm=curMonthName();
   const to=(o.owners||[]).map(x=>x.email).filter(Boolean).join(',');
