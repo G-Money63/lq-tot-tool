@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.18.1</title>
+<title>La Quinta TOT Tool — v0.19.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -22,6 +22,28 @@
   header h1{margin:0;font-size:22px}header p{margin:4px 0 0;color:#cfe0ee;font-size:13px}
   .wrap{max-width:1160px;margin:0 auto;padding:22px 20px 60px}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:20px}
+  .orpt{background:#fff;color:#161c24;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;padding:20px 22px}
+  .orpt h1{font-size:25px;text-align:center;margin:0 0 14px;font-weight:400}
+  .orpt .olg{text-align:center;margin-bottom:4px}
+  .orpt .olg img{max-width:230px;height:auto}
+  .orpt .ohdr{width:100%;border-collapse:collapse;margin-bottom:14px}
+  .orpt .ohdr td{border:1px solid #333;padding:4px 8px}
+  .orpt .ohdr td:first-child{width:34%;font-weight:600}
+  .orpt .ohdr td:last-child{text-align:center;font-size:14px}
+  .orpt .ocols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:820px){.orpt .ocols{grid-template-columns:1fr}}
+  .orpt .ost{font-weight:700;text-decoration:underline;margin:12px 0 4px}
+  .orpt table.og{width:100%;border-collapse:collapse}
+  .orpt table.og td,.orpt table.og th{border:1px solid #333;padding:2px 7px}
+  .orpt table.og th{background:#f2f6f9;font-size:10.5px;text-transform:uppercase;color:#5a6572}
+  .orpt .r{text-align:right}.orpt .c{text-align:center}.orpt .lbl{text-align:right}
+  .orpt .gr{background:#e2efda;font-weight:700}
+  .orpt .am{background:#fde9d0;font-weight:700;color:#a4232b}
+  .orpt .onotes{border:1px solid #333;margin-top:12px}
+  .orpt .onotes .t{font-weight:700;font-size:15px;padding:4px 8px;border-bottom:1px solid #333}
+  .orpt .onotes .b{padding:7px 8px;min-height:38px}
+  .ogrid{display:grid;grid-template-columns:1fr 110px;gap:4px 8px;align-items:center;font-size:12px}
+  .ogrid .gh{grid-column:1/-1;font-weight:700;color:var(--navy);margin-top:8px}
   .drops{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
   @media(max-width:900px){.drops{grid-template-columns:1fr}}
   .airtbl td.gap{font-weight:700}
@@ -352,7 +374,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.18.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.19.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -395,6 +417,20 @@ function saveState(){
 }
 /* ---------- owner reports (split ownership) ---------- */
 const LS_OWN='lqtot_owners_v1',LS_EXP='lqtot_exp_v1';
+const LS_ORPT='lqtot_orpt_v1';
+const OREV_FIELDS=[['ownerStay','Owner Stay Revenue'],['midClean','Mid Stay Cleaning fees'],['directFees','Direct Booking Fees'],
+  ['earlyLate','Early Check in / Late Check out fee'],['concierge','Concierge Services'],['damage','Damage Fees'],
+  ['cancelFees','Cancellation Fees'],['otherInc','Other Income']];
+const OEXP_OWNER=[['oClean','Cleaning Fees (with Turno Fees)'],['oPay','Payment processing fees'],
+  ['oPms','Property Management Software Fee (Per listing)'],['oPrice','Dynamic Pricing Software Fee (Per listing)'],
+  ['oMaint','Maintenance & Repairs'],['oFurn','Furnishings - new or replacement'],['oExpend','Expendables (Soap, TP, Amenities, Water, etc)']];
+const OEXP_MGMT=[['mClean','Cleaning Fees (with Turno Fees)'],['mPay','Payment processing fees'],
+  ['mMaint','Maintenance & Repairs'],['mFurn','Furnishings - new or replacement'],['mExpend','Expendables (Soap, TP, Amenities, Water, etc)']];
+let ORPT=lget(LS_ORPT);
+function saveORPT(){lset(LS_ORPT,ORPT);}
+function orptKey(u){return curMonthName()+'||'+u;}
+function orpt(u){const k=orptKey(u);if(!ORPT[k])ORPT[k]={notes:''};return ORPT[k];}
+function orptNum(u,f){return +(orpt(u)[f])||0;}
 let OWNERS=lget(LS_OWN),OWNEREXP=(function(){try{return JSON.parse(localStorage.getItem(LS_EXP)||'[]');}catch(e){return [];}})();
 Object.keys(OWNERS).forEach(u=>{const o=OWNERS[u];if(o&&!o.owners){OWNERS[u]={mgmt:o.mgmt==null?5:o.mgmt,pms:o.pms==null?35:o.pms,pricing:o.pricing==null?15:o.pricing,owners:o.owner?[{name:o.owner,email:o.email||'',share:100}]:[]};}});
 function saveOwners(){lset(LS_OWN,OWNERS);}
@@ -468,13 +504,13 @@ function computeOwner(u){
   const R=hasDeposits?received:payoutTot;
   const monthGross=gross;
   const cfg=unitCfg(u);
-  /* Fee basis: GROSS revenue for the month (accommodation + cleaning + pet), before the
+  /* Fee basis: GROSS revenue for the month — accommodation plus all other revenue, before the
      platform's commission. Matches the historic owner reports. */
-  const mgmtFee=r2(monthGross*((+cfg.mgmt||0)/100));
+  const grossForFee=r2(monthGross+OREV_FIELDS.reduce((s,f)=>s+orptNum(u,f[0]),0));
+  const mgmtFee=r2(grossForFee*((+cfg.mgmt||0)/100));
   const pms=+cfg.pms||0,pricing=+cfg.pricing||0;
-  const exp=OWNEREXP.filter(e=>e.unit===u);
-  const manMgmt=r2(exp.filter(e=>e.paidBy==='mgmt').reduce((s,e)=>s+(+e.amount||0),0));
-  const manOwner=r2(exp.filter(e=>e.paidBy==='owner').reduce((s,e)=>s+(+e.amount||0),0));
+  const manMgmt=r2(OEXP_MGMT.reduce((s,f)=>s+orptNum(u,f[0]),0));
+  const manOwner=r2(OEXP_OWNER.reduce((s,f)=>s+orptNum(u,f[0]),0));
   const mgmtCharged=r2(mgmtFee+pms+pricing+manMgmt);
   const distribution=r2(R-mgmtCharged);
   const ownerPaid=r2(tax+manOwner);
@@ -485,9 +521,28 @@ function computeOwner(u){
   const shareTot=owners.reduce((s,o)=>s+(+o.share||0),0);
   const perOwner=owners.map(o=>({name:o.name,email:o.email,share:+o.share||0,
     distribution:r2(distribution*((+o.share||0)/100)),net:r2(ownerNet*((+o.share||0)/100))}));
+  /* Owner-report totals, laid out the way the existing spreadsheet does it. */
+  const accomRev=r2(rs.reduce((s,r)=>s+(typeof r.monthAccom==='number'?r.monthAccom:r.gross),0));
+  const autoClean=r2(rs.reduce((s,r)=>s+(r.clean||0)*((r.nights>=30&&r.payout>0)?(r.monthPayout/r.payout):1),0));
+  const autoPet=r2(rs.reduce((s,r)=>s+(r.pet||0)*((r.nights>=30&&r.payout>0)?(r.monthPayout/r.payout):1),0));
+  const manOtherRev=r2(OREV_FIELDS.reduce((s,f)=>s+orptNum(u,f[0]),0));
+  const otherRev=r2(autoClean+autoPet+manOtherRev);
+  const grossRev=r2(accomRev+otherRev);
+  const platformFees=r2(rs.reduce((s,r)=>s+(r.commission||0)*((r.payout>0)?(r.monthPayout/r.payout):0),0));
+  const ownerExpTot=r2(tax+platformFees+manOwner);
+  const mgmtExpTot=mgmtCharged;
+  const totalExp=r2(ownerExpTot+mgmtExpTot);
+  const netIncome=r2(grossRev-totalExp);
+  const grossDist=r2(grossRev-mgmtExpTot+tax);
+  const bookedNights=rs.reduce((s,r)=>s+(r.nights>=30?nightsInMonth(r,curMonthName()):r.nights),0);
+  const days=monthDays(curMonthName());
+  const occRatio=days?Math.min(100,r2(rs.reduce((s,r)=>s+nightsInMonth(r,curMonthName()),0)/days*100)):0;
+  const adr=bookedNights?r2(accomRev/bookedNights):0;
+  const cashOnHand=r2(R-mgmtExpTot);
   return {u,cfg,rs,gross,payoutTot,tax,R,hasDeposits,mgmtFee,pms,pricing,manMgmt,manOwner,
-    manOwnerList:exp.filter(e=>e.paidBy==='owner'),manMgmtList:exp.filter(e=>e.paidBy==='mgmt'),
-    mgmtCharged,distribution,ownerPaid,ownerNet,longTerm,covShort,received,owners,perOwner,shareTot};
+    mgmtCharged,distribution,ownerPaid,ownerNet,longTerm,covShort,received,owners,perOwner,shareTot,
+    accomRev,autoClean,autoPet,manOtherRev,otherRev,grossRev,platformFees,ownerExpTot,mgmtExpTot,
+    totalExp,netIncome,grossDist,bookedNights,days,occRatio,adr,cashOnHand,notes:orpt(u).notes||''};
 }
 let OSET_OPEN=new Set();function renderOwnerSetup(){
   document.getElementById('ownerSetupPanel').classList.remove('hidden');
@@ -536,6 +591,25 @@ let OSET_OPEN=new Set();function renderOwnerSetup(){
 function renderOwnerExp(){
   if(!RES.length)return;
   document.getElementById('ownerExpPanel').classList.remove('hidden');
+  const runits=[...new Set(monthRes().map(r=>r.unitCode))].sort();
+  const fld=(u,f,l)=>`<label>${l}</label><input class="oset onum orf" data-u="${u}" data-f="${f}" type="number" step="0.01" value="${orptNum(u,f)||''}" placeholder="0.00">`;
+  document.getElementById('ownerExpTable').outerHTML=`<div id="ownerExpTable">${runits.map(u=>`
+    <details style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:10px">
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy)">${u} — ${curMonthName()}</summary>
+      <div class="note" style="margin:6px 0">Tax, platform fees, cleaning, pet fees and the management fee fill themselves. Type only what the tool cannot know.</div>
+      <div class="ogrid">
+        <div class="gh">Other Revenue</div>${OREV_FIELDS.map(f=>fld(u,f[0],f[1])).join('')}
+        <div class="gh">Expenses — paid by owner's bank or CC</div>${OEXP_OWNER.map(f=>fld(u,f[0],f[1])).join('')}
+        <div class="gh">Expenses — you pay, charged to owner</div>${OEXP_MGMT.map(f=>fld(u,f[0],f[1])).join('')}
+        <div class="gh">Notes / Issues</div>
+        <textarea class="oset orn" data-u="${u}" style="grid-column:1/-1;width:100%;height:52px" placeholder="Unit has been booked, no issues">${(orpt(u).notes||'').replace(/</g,'&lt;')}</textarea>
+      </div>
+    </details>`).join('')||'<div class="note">No units with activity this month.</div>'}</div>`;
+  document.querySelectorAll('.orf').forEach(el=>el.addEventListener('change',e=>{
+    orpt(e.target.dataset.u)[e.target.dataset.f]=+e.target.value||0;saveORPT();renderOwnerReports();}));
+  document.querySelectorAll('.orn').forEach(el=>el.addEventListener('change',e=>{
+    orpt(e.target.dataset.u).notes=e.target.value;saveORPT();renderOwnerReports();}));
+  return;
   const units=unitList();
   const uopts=v=>`<option value="">— unit —</option>`+units.map(u=>`<option value="${u}"${v===u?' selected':''}>${u}</option>`).join('');
   document.getElementById('ownerExpTable').innerHTML=`<thead><tr><th class="l">Unit</th><th class="l">Description</th><th>Amount</th><th class="l">Paid by</th><th></th></tr></thead><tbody>`+
@@ -572,40 +646,73 @@ function monthDays(fm){const p=(fm||'').split(' ');const mi=MONTHS.indexOf(p[0])
 function monthRange(fm){const p=(fm||'').split(' ');const mi=MONTHS.indexOf(p[0]);const yr=+p[1]||new Date().getFullYear();if(mi<0)return null;return {start:new Date(yr,mi,1),end:new Date(yr,mi+1,1)};}
 function nightsInMonth(r,fm){const mr=monthRange(fm);if(!mr||!r.ci||!r.co)return r.nights||0;const s=Math.max(r.ci,mr.start),e=Math.min(r.co,mr.end);return Math.max(0,Math.round((e-s)/86400000));}
 function statementSheet(u){
-  const o=computeOwner(u);const rs=o.rs.slice().sort((a,b)=>(a.ci&&b.ci?a.ci-b.ci:0));
-  /* Everything on an owner statement is THIS MONTH's share: nights that fell in the month and
-     the revenue actually earned in it. Whole-booking figures would contradict the total below. */
-  const fm=curMonthName();const days=monthDays(fm);
-  const rev=r=>(typeof r.monthGross==='number'?r.monthGross:r.gross);
-  const nOf=r=>(r.nights>=30?nightsInMonth(r,fm):r.nights);
-  const bn=rs.reduce((s,r)=>s+nOf(r),0);
-  const accomTot=r2(rs.reduce((s,r)=>s+(typeof r.monthAccom==='number'?r.monthAccom:r.gross),0));
-  const otherTot=r2(o.gross-accomTot);
-  const occ=days?Math.min(100,Math.round(rs.reduce((s,r)=>s+nightsInMonth(r,fm),0)/days*100)):0;
-  const adr=bn?r2(accomTot/bn):0;
-  const names=o.owners.map(x=>x.name).filter(Boolean).join(', ')||(unitDisplayName(u)||u);
-  const bkRows=rs.map(r=>{const lng=r.nights>=30;
-    return `<tr><td>${r.guest} · ${r.ci?r.ci.toLocaleDateString('en-US'):''}–${r.co?r.co.toLocaleDateString('en-US'):''}${lng?' <i>(long stay — billed monthly)</i>':''}</td><td class="c">${nOf(r)}</td><td class="r">${money(typeof r.monthAccom==='number'?r.monthAccom:r.gross)}</td></tr>`;}).join('');
-  const otherRows=otherTot>0.005?`<div class="sec"><h3>Other revenue</h3><div class="row"><span>Cleaning and pet fees</span><span>${money(otherTot)}</span></div><div class="row sub"><span>Gross revenue</span><span>${money(o.gross)}</span></div></div>`:'';
-  const mgmtE=o.manMgmtList.map(e=>`<div class="row"><span>${e.desc||'expense'}</span><span class="neg">− ${money(+e.amount||0)}</span></div>`).join('');
-  const ownE=o.manOwnerList.map(e=>`<div class="row"><span>${e.desc||'expense'}</span><span class="neg">− ${money(+e.amount||0)}</span></div>`).join('');
-  return `<div class="sheet"><div class="shead"><img src="${LOGO}" alt="La Quinta Resort Management"><div class="doc"><div class="t">Owner statement</div><div class="m">${fm}</div><div class="m">Issued ${new Date().toLocaleDateString('en-US')}</div></div></div>
-  <div class="srule"></div><div class="who">Prepared for <b>${names}</b> &nbsp;·&nbsp; <b>${u}</b>${rs[0]&&rs[0].unitName?' — '+rs[0].unitName:''}</div>
-  <div class="stats"><div class="stat"><div class="v">${bn}</div><div class="l">Nights occupied</div></div><div class="stat"><div class="v">${occ}%</div><div class="l">Occupancy</div></div><div class="stat"><div class="v">${money(adr)}</div><div class="l">Avg nightly rate</div></div></div>
-  <div class="sec"><h3>Bookings</h3><table class="bk"><thead><tr><th>Guest &amp; dates</th><th class="c">Nights</th><th class="r">Accommodation</th></tr></thead><tbody>${bkRows}<tr class="tot"><td>Total — ${rs.length} booking${rs.length!==1?'s':''}</td><td class="c">${bn}</td><td class="r">${money(accomTot)}</td></tr></tbody></table></div>
-  ${otherRows}
-  <div class="sec"><h3>Distribution</h3>
-    <div class="row"><span>Received from Airbnb${o.hasDeposits?' (net of platform fee)':' (estimated)'}</span><span>${money(o.R)}</span></div>
-    <div class="row"><span>Management fee (${o.cfg.mgmt}% of gross revenue${o.longTerm?' · prorated':''})</span><span class="neg">− ${money(o.mgmtFee)}</span></div>
-    <div class="row"><span>Property management + pricing software</span><span class="neg">− ${money(r2(o.pms+o.pricing))}</span></div>
-    ${mgmtE}
-    <div class="band dep"><span>Distribution deposited to your account</span><span>${money(o.distribution)}</span></div></div>
-  <div class="sec"><h3>Paid from your account</h3>
-    <div class="row"><span>La Quinta city tax (TOT)</span><span class="neg">− ${money(o.tax)}</span></div>
-    ${ownE}
-    <div class="band net"><span>Your net after expenses</span><span>${money(o.ownerNet)}</span></div></div>
-  <div class="sec"><div class="notes"><div class="lab">Notes</div>${(o.rs.map(r=>r.note).filter(Boolean).join(' · '))||'—'}</div></div>
-  <div class="foot"><b>La Quinta Resort Management, LLC</b> &nbsp;·&nbsp; managed by Gary Rubens &nbsp;·&nbsp; garyjrubens@gmail.com<br>Your distribution is deposited to your account in full. City tax and any expenses shown are paid from that account on your behalf. Management summary, not tax advice.</div></div>`;
+  const o=computeOwner(u);if(!o)return '';
+  const fm=curMonthName(),c=unitCfg(u);
+  const names=(o.owners||[]).map(x=>x.name).filter(Boolean).join(', ')||'—';
+  const m=x=>money(x);
+  const bk=o.rs.map(r=>`<tr><td>${r.guest}</td><td class="r">${m(typeof r.monthAccom==='number'?r.monthAccom:r.gross)}</td>
+      <td class="c">${r.ci?r.ci.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}–${r.co?r.co.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</td>
+      <td class="c">${r.nights>=30?nightsInMonth(r,fm):r.nights}</td></tr>`).join('')
+    ||`<tr><td colspan="4" class="c" style="color:#5a6572">No bookings this period</td></tr>`;
+  const revRow=(l,v)=>`<tr><td class="lbl">${l}</td><td class="r">${m(v)}</td></tr>`;
+  const otherRows=[revRow('Owner Stay Revenue',orptNum(u,'ownerStay')),revRow('Cleaning Fees',o.autoClean),
+    revRow('Mid Stay Cleaning fees',orptNum(u,'midClean')),revRow('Pet Fees',o.autoPet),
+    revRow('Direct Booking Fees',orptNum(u,'directFees')),revRow('Early Check in / Late Check out fee',orptNum(u,'earlyLate')),
+    revRow('Concierge Services',orptNum(u,'concierge')),revRow('Damage Fees',orptNum(u,'damage')),
+    revRow('Cancellation Fees',orptNum(u,'cancelFees')),revRow('Other Income',orptNum(u,'otherInc'))].join('');
+  const ownerExpRows=[revRow('La Quinta Muni Revs Tourist Taxes (11%)',o.tax),
+    revRow('Cleaning Fees (with Turno Fees)',orptNum(u,'oClean')),
+    revRow('Booking Platform Fees (Air BNB /VRBO)',o.platformFees),
+    revRow('Payment processing fees',orptNum(u,'oPay')),
+    revRow('Property Management Software Fee (Per listing)',orptNum(u,'oPms')),
+    revRow('Dynamic Pricing Software Fee (Per listing)',orptNum(u,'oPrice')),
+    revRow('Maintenance &amp; Repairs',orptNum(u,'oMaint')),
+    revRow('Furnishings - new or replacement',orptNum(u,'oFurn')),
+    revRow('Expendables (Soap, TP, Amenities, Water, etc)',orptNum(u,'oExpend'))].join('');
+  const mgmtExpRows=[revRow(`Property Management Fees (of Gross Revenue)`,o.mgmtFee),
+    revRow('Cleaning Fees (with Turno Fees)',orptNum(u,'mClean')),
+    revRow('Payment processing fees',orptNum(u,'mPay')),
+    revRow('Property Management Software Fee (Per listing)',o.pms),
+    revRow('Dynamic Pricing Software Fee (Per listing)',o.pricing),
+    revRow('Maintenance &amp; Repairs',orptNum(u,'mMaint')),
+    revRow('Furnishings - new or replacement',orptNum(u,'mFurn')),
+    revRow('Expendables (Soap, TP, Amenities, Water, etc)',orptNum(u,'mExpend'))].join('');
+  return `<div class="orpt">
+    ${LOGO?`<div class="olg"><img src="${LOGO}" alt=""></div>`:''}
+    <h1>Owner Report</h1>
+    <table class="ohdr"><tr><td>Month</td><td>${fm}</td></tr>
+      <tr><td>Owners</td><td>${names}</td></tr>
+      <tr><td>Property</td><td>${c.addr||o.rs[0]&&o.rs[0].unitName||u}</td></tr></table>
+    <div class="ocols">
+      <div>
+        <div class="ost">Booking Revenue</div>
+        <table class="og"><tr><th>Guest</th><th class="r">Amount</th><th class="c">Booking Dates</th><th class="c"># of Days</th></tr>
+          ${bk}
+          <tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(o.accomRev)}</td><td class="lbl"><b>Total Days</b></td><td class="c gr">${o.bookedNights}</td></tr></table>
+        <div class="ost">Other Revenue</div>
+        <table class="og">${otherRows}<tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(o.otherRev)}</td></tr></table>
+        <table class="og" style="margin-top:12px">
+          <tr><td><b>Gross Revenue</b></td><td class="r gr">${m(o.grossRev)}</td></tr>
+          <tr><td><b>Less Expenses (Not Paid by Owner Bank or CC)</b></td><td class="r am">${m(o.mgmtExpTot)}</td></tr>
+          <tr><td><b>La Quinta Taxes Collected (to be Paid)</b></td><td class="r gr">${m(o.tax)}</td></tr>
+          <tr><td><b>Gross Distribution includes (Taxes to be Paid)</b></td><td class="r gr">${m(o.grossDist)}</td></tr></table>
+        <table class="og" style="margin-top:12px">
+          <tr><td class="lbl">Number of days in Month</td><td class="r">${o.days}</td></tr>
+          <tr><td class="lbl">Occupancy Ratio</td><td class="r">${o.occRatio.toFixed(2)}%</td></tr>
+          <tr><td class="lbl">Average Nightly Rate</td><td class="r">${m(o.adr)}</td></tr></table>
+      </div>
+      <div>
+        <div class="ost">Expenses (Paid by Owner Bank or CC)</div>
+        <table class="og">${ownerExpRows}<tr><td class="lbl"><b>Total</b></td><td class="r am">${m(o.ownerExpTot)}</td></tr></table>
+        <div class="ost">Expenses (NOT Paid by Owner Bank or CC)</div>
+        <table class="og">${mgmtExpRows}<tr><td class="lbl"><b>Total</b></td><td class="r am">${m(o.mgmtExpTot)}</td></tr></table>
+        <table class="og" style="margin-top:12px">
+          <tr><td class="lbl"><b>Total Expenses</b></td><td class="r am">${m(o.totalExp)}</td></tr>
+          <tr><td class="lbl"><b>Gross Revenue - Expenses = Net Income</b></td><td class="r gr">${m(o.netIncome)}</td></tr></table>
+      </div>
+    </div>
+    <div class="onotes"><div class="t">Notes / Issues:</div><div class="b">${(o.notes||'').replace(/</g,'&lt;')||'&nbsp;'}</div></div>
+  </div>`;
 }
 function openPrint(body){const w=window.open('','_blank');if(!w){alert('Allow pop-ups to print.');return;}w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Owner statement</title><style>'+STATEMENT_CSS+'</style></head><body>'+body+'</body></html>');w.document.close();setTimeout(()=>{w.focus();w.print();},400);}
 function printStatement(u){openPrint(statementSheet(u));}
