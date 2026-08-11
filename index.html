@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.20.0</title>
+<title>La Quinta TOT Tool — v0.20.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -374,7 +374,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.20.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.20.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -755,10 +755,44 @@ function viewAllStatements(){showStatementModal([...new Set(monthRes().map(r=>r.
 function closeStmtModal(){document.getElementById('stmtModal').classList.add('hidden');}
 function printStatementFrame(){const f=document.getElementById('stmtFrame');f.contentWindow.focus();f.contentWindow.print();}
 function printAllStatements(){openPrint([...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join(''));}
-function emailStatement(u){const o=computeOwner(u);const to=o.owners.map(x=>x.email).filter(Boolean).join(',');
-  const subj=encodeURIComponent(`Owner statement — ${u} — ${CURMONTH}`);
-  const body=encodeURIComponent(`Hi,\n\nHere is your ${CURMONTH} statement for ${u}.\n\nDistribution deposited to your account: ${money(o.distribution)}\nCity tax + expenses paid from your account: ${money(o.ownerPaid)}\nNet after expenses: ${money(o.ownerNet)}\n\nThe full statement is attached (print or save it as PDF from the tool and attach it here).\n\nBest,\nGary Rubens\nLa Quinta Resort Management, LLC`);
-  location.href=`mailto:${to}?subject=${subj}&body=${body}`;}
+function emailStatement(u){
+  const o=computeOwner(u);const c=unitCfg(u);const fm=curMonthName();
+  const to=(o.owners||[]).map(x=>x.email).filter(Boolean).join(',');
+  const names=(o.owners||[]).map(x=>x.name).filter(Boolean).join(', ');
+  const sg=signer();
+  const pad=(l,v)=>('  '+l).padEnd(34)+money(v);
+  const L=[];
+  L.push(`Hi${names?' '+names:''},`,'',`Here is your ${fm} owner report for ${c.addr||u}.`,'');
+  L.push('BOOKINGS');
+  const rs=o.rs.slice().sort((a,b)=>(a.ci&&b.ci?a.ci-b.ci:0));
+  if(!rs.length)L.push('  No bookings this period');
+  rs.slice(0,8).forEach(r=>{
+    const d=(r.ci?r.ci.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')+'-'+(r.co?r.co.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'');
+    const n=r.nights>=30?nightsInMonth(r,fm):r.nights;
+    L.push('  '+(r.guest+'  '+d).padEnd(38)+n+' nts   '+money(typeof r.monthAccom==='number'?r.monthAccom:r.gross));});
+  if(rs.length>8)L.push(`  …and ${rs.length-8} more (see attached)`);
+  L.push('',
+    'REVENUE',pad('Accommodation',o.accomRev),pad('Other revenue',o.otherRev),pad('Gross revenue',o.grossRev),'',
+    'EXPENSES',pad('Paid from your account',o.ownerExpTot),pad('Retained by LQRM',o.mgmtExpTot),pad('Total expenses',o.totalExp),'',
+    'DISTRIBUTION',pad('Deposited to your account',o.grossDist),
+    `    includes ${money(o.tax)} city tax collected from guests,`,
+    '    which is paid to La Quinta from your account',
+    pad('Net income',o.netIncome),'',
+    `Occupancy ${o.occRatio.toFixed(2)}%   ·   Average nightly rate ${money(o.adr)}`);
+  if(o.notes)L.push('','NOTES','  '+o.notes);
+  L.push('','The full statement is attached.','',`Best,`,sg.name||'La Quinta Resort Management',
+    sg.name?'La Quinta Resort Management, LLC':'');
+  let text=L.filter(x=>x!==undefined).join('\n');
+  const subj=encodeURIComponent(`Owner report — ${u} — ${fm}`);
+  let body=encodeURIComponent(text);
+  if(body.length>1800){ // some mail clients truncate long mailto links
+    text=L.slice(0,4).concat(['REVENUE',pad('Gross revenue',o.grossRev),'','DISTRIBUTION',
+      pad('Deposited to your account',o.grossDist),pad('Net income',o.netIncome),'',
+      'Full detail is in the attached statement.','',`Best,`,sg.name||'La Quinta Resort Management']).join('\n');
+    body=encodeURIComponent(text);
+  }
+  location.href=`mailto:${to}?subject=${subj}&body=${body}`;
+}
 const XM=v=>({v:r2(+v||0),t:'n',z:'"$"#,##0.00'});
 const XN=v=>({v:Math.round(+v||0),t:'n',z:'0'});
 function ownerAoa(u){
