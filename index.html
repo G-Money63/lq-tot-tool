@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.20.1</title>
+<title>La Quinta TOT Tool — v0.21.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.12.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
@@ -374,7 +375,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.20.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.21.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -743,6 +744,45 @@ function statementSheet(u){
 }
 function openPrint(body){const w=window.open('','_blank');if(!w){alert('Allow pop-ups to print.');return;}w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Owner statement</title><style>'+STATEMENT_CSS+'</style></head><body>'+body+'</body></html>');w.document.close();setTimeout(()=>{w.focus();w.print();},400);}
 function printStatement(u){openPrint(statementSheet(u));}
+/* Real PDF file so it can be attached to an email. Falls back to the print dialog
+   if the library did not load (offline, blocked CDN). */
+function pdfStatement(u,btn){
+  const label=btn?btn.textContent:'';
+  if(typeof html2pdf!=='function'){
+    alert('The PDF library did not load — opening the print dialog instead. Choose “Save as PDF” there.');
+    openPrint(statementSheet(u));return;
+  }
+  const host=document.createElement('div');
+  host.style.cssText='position:fixed;left:-10000px;top:0;width:1050px;background:#fff';
+  host.innerHTML=statementSheet(u);
+  document.body.appendChild(host);
+  if(btn){btn.disabled=true;btn.textContent='Building…';}
+  const name=`Owner_Report_${safeName(u)}_${curMonthName().replace(/\s+/g,'_')}.pdf`;
+  html2pdf().set({margin:[8,8,8,8],filename:name,image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,backgroundColor:'#ffffff',useCORS:true},
+      jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},
+      pagebreak:{mode:['css','legacy']}})
+    .from(host).save()
+    .then(()=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}})
+    .catch(e=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}
+      alert('Could not build the PDF ('+e.message+') — opening the print dialog instead.');
+      openPrint(statementSheet(u));});
+}
+function pdfAllStatements(btn){
+  if(typeof html2pdf!=='function'){openPrint([...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join(''));return;}
+  const label=btn?btn.textContent:'';
+  const host=document.createElement('div');
+  host.style.cssText='position:fixed;left:-10000px;top:0;width:1050px;background:#fff';
+  host.innerHTML=[...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join('');
+  document.body.appendChild(host);
+  if(btn){btn.disabled=true;btn.textContent='Building…';}
+  html2pdf().set({margin:[8,8,8,8],filename:`Owner_Reports_${curMonthName().replace(/\s+/g,'_')}.pdf`,
+      image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,backgroundColor:'#ffffff',useCORS:true},
+      jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.orpt'}})
+    .from(host).save()
+    .then(()=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}})
+    .catch(()=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}});
+}
 /* v0.8.4 — on-screen statement preview */
 function showStatementModal(bodyHtml){
   const modal=document.getElementById('stmtModal'),frame=document.getElementById('stmtFrame');
@@ -848,11 +888,11 @@ function excelAllStatements(){const wb=XLSX.utils.book_new();[...new Set(monthRe
 function renderOwnerReports(){
   if(!RES.length)return;
   document.getElementById('ownerRptPanel').classList.remove('hidden');
-  const toolbar=`<div class="toolbar"><button class="btn sm ghost" id="viewAllBtn">👁 View all</button><button class="btn sm" id="printAllBtn">⎙ Print all statements</button><button class="btn sm ghost" id="excelAllBtn">⬇ All statements (Excel)</button><span class="note">View on-screen, or print → save as PDF, or attach to an owner email.</span></div>`;
+  const toolbar=`<div class="toolbar"><button class="btn sm ghost" id="viewAllBtn">👁 View all</button><button class="btn sm" id="pdfAllBtn">⬇ All statements (PDF)</button><button class="btn sm ghost" id="printAllBtn">⎙ Print all</button><button class="btn sm ghost" id="excelAllBtn">⬇ All statements (Excel)</button><span class="note">Download the PDF, then press Email — the message is pre-filled, attach the PDF to it.</span></div>`;
   document.getElementById('ownerRpts').innerHTML=toolbar+[...new Set(monthRes().map(r=>r.unitCode))].sort().map(u=>{
     const o=computeOwner(u);const names=o.owners.length?o.owners.map(x=>x.name||'?').join(', '):'(add owners in setup)';
     return `<div class="ocard"><div class="ohead"><div><b>${u}</b><div class="sub">${names}</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost oview" data-u="${encodeURIComponent(u)}">👁 View</button><button class="btn sm oprint" data-u="${encodeURIComponent(u)}">⎙ Print/PDF</button><button class="btn sm ghost oemail" data-u="${encodeURIComponent(u)}">✉ Email</button><button class="btn sm ghost oxlsx" data-u="${encodeURIComponent(u)}">⬇ Excel</button></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost oview" data-u="${encodeURIComponent(u)}">👁 View</button><button class="btn sm opdf" data-u="${encodeURIComponent(u)}">⬇ PDF</button><button class="btn sm ghost oprint" data-u="${encodeURIComponent(u)}">⎙ Print</button><button class="btn sm ghost oemail" data-u="${encodeURIComponent(u)}">✉ Email</button><button class="btn sm ghost oxlsx" data-u="${encodeURIComponent(u)}">⬇ Excel</button></div></div>
       <div class="obody">
         <div class="oline"><span>Gross booking revenue (this month)</span><span>${money(o.gross)}</span></div>
         <div class="oline"><span>Received from Airbnb${o.hasDeposits?'':' (est.)'}</span><span>${money(o.R)}</span></div>
@@ -866,10 +906,13 @@ function renderOwnerReports(){
   }).join('');
   document.getElementById('viewAllBtn').addEventListener('click',viewAllStatements);
   document.getElementById('printAllBtn').addEventListener('click',printAllStatements);
+  const pab=document.getElementById('pdfAllBtn');
+  if(pab)pab.addEventListener('click',e=>pdfAllStatements(e.currentTarget));
   document.getElementById('excelAllBtn').addEventListener('click',excelAllStatements);
   document.querySelectorAll('.oview').forEach(b=>b.addEventListener('click',e=>viewStatement(decodeURIComponent(e.currentTarget.dataset.u))));
   document.querySelectorAll('.oprint').forEach(b=>b.addEventListener('click',e=>printStatement(decodeURIComponent(e.currentTarget.dataset.u))));
   document.querySelectorAll('.oemail').forEach(b=>b.addEventListener('click',e=>emailStatement(decodeURIComponent(e.currentTarget.dataset.u))));
+  document.querySelectorAll('.opdf').forEach(b=>b.addEventListener('click',e=>pdfStatement(decodeURIComponent(e.currentTarget.dataset.u),e.currentTarget)));
   document.querySelectorAll('.oxlsx').forEach(b=>b.addEventListener('click',e=>excelStatement(decodeURIComponent(e.currentTarget.dataset.u))));
 }
 const r2=v=>Math.round((v+Number.EPSILON)*100)/100;
