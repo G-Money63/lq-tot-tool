@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.21.0</title>
+<title>La Quinta TOT Tool — v0.21.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.12.1/html2pdf.bundle.min.js"></script>
@@ -45,6 +45,8 @@
   .orpt .onotes .b{padding:7px 8px;min-height:38px}
   .ogrid{display:grid;grid-template-columns:1fr 110px;gap:4px 8px;align-items:center;font-size:12px}
   .ogrid .gh{grid-column:1/-1;font-weight:700;color:var(--navy);margin-top:8px}
+  .pdfhost .orpt .ocols{grid-template-columns:1fr 1fr !important}
+  .pdfhost .orpt{max-width:none}
   .drops{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
   @media(max-width:900px){.drops{grid-template-columns:1fr}}
   .airtbl td.gap{font-weight:700}
@@ -375,7 +377,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.21.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.21.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -744,57 +746,49 @@ function statementSheet(u){
 }
 function openPrint(body){const w=window.open('','_blank');if(!w){alert('Allow pop-ups to print.');return;}w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Owner statement</title><style>'+STATEMENT_CSS+'</style></head><body>'+body+'</body></html>');w.document.close();setTimeout(()=>{w.focus();w.print();},400);}
 function printStatement(u){openPrint(statementSheet(u));}
-/* Real PDF file so it can be attached to an email. Falls back to the print dialog
-   if the library did not load (offline, blocked CDN). */
-function pdfStatement(u,btn){
-  const label=btn?btn.textContent:'';
+/* Real PDF file so it can be attached to an email.
+   html2canvas crops to the element's page coordinates, so the source must sit at a real
+   on-screen position — rendering it off-screen produces a blank page. We show it at 0,0
+   under a cover sheet for the second it takes to capture. */
+function pdfHost(html){
+  const cover=document.createElement('div');
+  cover.style.cssText='position:fixed;inset:0;background:rgba(20,28,36,.85);z-index:2147483646;display:flex;align-items:center;justify-content:center;color:#fff;font:600 16px Arial,sans-serif';
+  cover.textContent='Building PDF…';
+  const host=document.createElement('div');
+  host.className='pdfhost';
+  host.style.cssText='position:absolute;top:0;left:0;width:1040px;background:#fff;z-index:1';
+  host.innerHTML=html;
+  document.body.appendChild(host);document.body.appendChild(cover);
+  window.scrollTo(0,0);
+  return {host,cover,done(){host.remove();cover.remove();}};
+}
+function pdfOpts(name,perPage){return {margin:[8,8,8,8],filename:name,
+  image:{type:'jpeg',quality:0.98},
+  html2canvas:{scale:2,backgroundColor:'#ffffff',useCORS:true,scrollX:0,scrollY:0,windowWidth:1100},
+  jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},
+  pagebreak:perPage?{mode:['css','legacy'],before:'.orpt'}:{mode:['css','legacy']}};}
+function buildPdf(html,name,btn,perPage){
   if(typeof html2pdf!=='function'){
     alert('The PDF library did not load — opening the print dialog instead. Choose “Save as PDF” there.');
-    openPrint(statementSheet(u));return;
+    openPrint(html);return;
   }
-  const host=document.createElement('div');
-  host.style.cssText='position:fixed;left:-10000px;top:0;width:1050px;background:#fff';
-  host.innerHTML=statementSheet(u);
-  document.body.appendChild(host);
+  const label=btn?btn.textContent:'';
   if(btn){btn.disabled=true;btn.textContent='Building…';}
-  const name=`Owner_Report_${safeName(u)}_${curMonthName().replace(/\s+/g,'_')}.pdf`;
-  html2pdf().set({margin:[8,8,8,8],filename:name,image:{type:'jpeg',quality:0.98},
-      html2canvas:{scale:2,backgroundColor:'#ffffff',useCORS:true},
-      jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},
-      pagebreak:{mode:['css','legacy']}})
-    .from(host).save()
-    .then(()=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}})
-    .catch(e=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}
-      alert('Could not build the PDF ('+e.message+') — opening the print dialog instead.');
-      openPrint(statementSheet(u));});
+  const h=pdfHost(html);
+  const finish=()=>{h.done();if(btn){btn.disabled=false;btn.textContent=label;}};
+  setTimeout(()=>{
+    html2pdf().set(pdfOpts(name,perPage)).from(h.host).save()
+      .then(finish)
+      .catch(e=>{finish();alert('Could not build the PDF ('+(e&&e.message||e)+') — opening the print dialog instead.');openPrint(html);});
+  },120);
+}
+function pdfStatement(u,btn){
+  buildPdf(statementSheet(u),`Owner_Report_${safeName(u)}_${curMonthName().replace(/\s+/g,'_')}.pdf`,btn,false);
 }
 function pdfAllStatements(btn){
-  if(typeof html2pdf!=='function'){openPrint([...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join(''));return;}
-  const label=btn?btn.textContent:'';
-  const host=document.createElement('div');
-  host.style.cssText='position:fixed;left:-10000px;top:0;width:1050px;background:#fff';
-  host.innerHTML=[...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join('');
-  document.body.appendChild(host);
-  if(btn){btn.disabled=true;btn.textContent='Building…';}
-  html2pdf().set({margin:[8,8,8,8],filename:`Owner_Reports_${curMonthName().replace(/\s+/g,'_')}.pdf`,
-      image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,backgroundColor:'#ffffff',useCORS:true},
-      jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.orpt'}})
-    .from(host).save()
-    .then(()=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}})
-    .catch(()=>{host.remove();if(btn){btn.disabled=false;btn.textContent=label;}});
+  const units=[...new Set(monthRes().map(r=>r.unitCode))].sort();
+  buildPdf(units.map(statementSheet).join(''),`Owner_Reports_${curMonthName().replace(/\s+/g,'_')}.pdf`,btn,true);
 }
-/* v0.8.4 — on-screen statement preview */
-function showStatementModal(bodyHtml){
-  const modal=document.getElementById('stmtModal'),frame=document.getElementById('stmtFrame');
-  const doc=frame.contentWindow.document;
-  doc.open();doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>'+STATEMENT_CSS+'</style></head><body>'+bodyHtml+'</body></html>');doc.close();
-  modal.classList.remove('hidden');
-}
-function viewStatement(u){showStatementModal(statementSheet(u));}
-function viewAllStatements(){showStatementModal([...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join(''));}
-function closeStmtModal(){document.getElementById('stmtModal').classList.add('hidden');}
-function printStatementFrame(){const f=document.getElementById('stmtFrame');f.contentWindow.focus();f.contentWindow.print();}
-function printAllStatements(){openPrint([...new Set(monthRes().map(r=>r.unitCode))].sort().map(statementSheet).join(''));}
 function emailStatement(u){
   const o=computeOwner(u);const c=unitCfg(u);const fm=curMonthName();
   const to=(o.owners||[]).map(x=>x.email).filter(Boolean).join(',');
