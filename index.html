@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.19.1</title>
+<title>La Quinta TOT Tool — v0.19.2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -374,7 +374,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.19.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.19.2 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -732,6 +732,8 @@ function emailStatement(u){const o=computeOwner(u);const to=o.owners.map(x=>x.em
   const subj=encodeURIComponent(`Owner statement — ${u} — ${CURMONTH}`);
   const body=encodeURIComponent(`Hi,\n\nHere is your ${CURMONTH} statement for ${u}.\n\nDistribution deposited to your account: ${money(o.distribution)}\nCity tax + expenses paid from your account: ${money(o.ownerPaid)}\nNet after expenses: ${money(o.ownerNet)}\n\nThe full statement is attached (print or save it as PDF from the tool and attach it here).\n\nBest,\nGary Rubens\nLa Quinta Resort Management, LLC`);
   location.href=`mailto:${to}?subject=${subj}&body=${body}`;}
+const XM=v=>({v:r2(+v||0),t:'n',z:'"$"#,##0.00'});
+const XN=v=>({v:Math.round(+v||0),t:'n',z:'0'});
 function ownerAoa(u){
   const o=computeOwner(u);const c=unitCfg(u);const fm=curMonthName();
   const rs=o.rs.slice().sort((a,b)=>(a.ci&&b.ci?a.ci-b.ci:0));
@@ -740,43 +742,43 @@ function ownerAoa(u){
     ['Month',fm],['Owners',(o.owners||[]).map(x=>x.name).filter(Boolean).join(', ')],
     ['Property',c.addr||(rs[0]&&rs[0].unitName)||u],[],
     ['Booking Revenue','Amount','Booking Dates','# of Days']];
-  rs.forEach(r=>a.push([r.guest,(typeof r.monthAccom==='number'?r.monthAccom:r.gross),dt(r),(r.nights>=30?nightsInMonth(r,fm):r.nights)]));
-  a.push(['Total',o.accomRev,'Total Days',o.bookedNights],[],
+  rs.forEach(r=>a.push([r.guest,XM((typeof r.monthAccom==='number'?r.monthAccom:r.gross)),dt(r),XN(r.nights>=30?nightsInMonth(r,fm):r.nights)]));
+  a.push(['Total',XM(o.accomRev),'Total Days',XN(o.bookedNights)],[],
     ['Other Revenue'],
-    ['  Owner Stay Revenue',orptNum(u,'ownerStay')],['  Cleaning Fees',o.autoClean],
-    ['  Mid Stay Cleaning fees',orptNum(u,'midClean')],['  Pet Fees',o.autoPet],
-    ['  Direct Booking Fees',orptNum(u,'directFees')],['  Early Check in / Late Check out fee',orptNum(u,'earlyLate')],
-    ['  Concierge Services',orptNum(u,'concierge')],['  Damage Fees',orptNum(u,'damage')],
-    ['  Cancellation Fees',orptNum(u,'cancelFees')],['  Other Income',orptNum(u,'otherInc')],
-    ['  Total',o.otherRev],[],
-    ['Gross Revenue',o.grossRev],
-    ['Less Expenses (Not Paid by Owner Bank or CC)',o.mgmtExpTot],
-    ['La Quinta Taxes Collected (to be Paid)',o.tax],
-    ['Gross Distribution includes (Taxes to be Paid)',o.grossDist],[],
-    ['Number of days in Month',o.days],['Occupancy Ratio',(o.occRatio.toFixed(2))+'%'],['Average Nightly Rate',o.adr],[],
+    ['  Owner Stay Revenue',XM(orptNum(u,'ownerStay'))],['  Cleaning Fees',XM(o.autoClean)],
+    ['  Mid Stay Cleaning fees',XM(orptNum(u,'midClean'))],['  Pet Fees',XM(o.autoPet)],
+    ['  Direct Booking Fees',XM(orptNum(u,'directFees'))],['  Early Check in / Late Check out fee',XM(orptNum(u,'earlyLate'))],
+    ['  Concierge Services',XM(orptNum(u,'concierge'))],['  Damage Fees',XM(orptNum(u,'damage'))],
+    ['  Cancellation Fees',XM(orptNum(u,'cancelFees'))],['  Other Income',XM(orptNum(u,'otherInc'))],
+    ['  Total',XM(o.otherRev)],[],
+    ['Gross Revenue',XM(o.grossRev)],
+    ['Less Expenses (Not Paid by Owner Bank or CC)',XM(o.mgmtExpTot)],
+    ['La Quinta Taxes Collected (to be Paid)',XM(o.tax)],
+    ['Gross Distribution includes (Taxes to be Paid)',XM(o.grossDist)],[],
+    ['Number of days in Month',XN(o.days)],['Occupancy Ratio',(o.occRatio.toFixed(2))+'%'],['Average Nightly Rate',XM(o.adr)],[],
     ['Expenses (Paid by Owner Bank or CC)'],
-    ['  La Quinta Muni Revs Tourist Taxes (11%)',o.tax],
-    ['  Cleaning Fees (with Turno Fees)',orptNum(u,'oClean')],
-    ['  Booking Platform Fees (Air BNB /VRBO)',o.platformFees],
-    ['  Payment processing fees',orptNum(u,'oPay')],
-    ['  Property Management Software Fee (Per listing)',orptNum(u,'oPms')],
-    ['  Dynamic Pricing Software Fee (Per listing)',orptNum(u,'oPrice')],
-    ['  Maintenance & Repairs',orptNum(u,'oMaint')],
-    ['  Furnishings - new or replacement',orptNum(u,'oFurn')],
-    ['  Expendables (Soap, TP, Amenities, Water, etc)',orptNum(u,'oExpend')],
-    ['  Total',o.ownerExpTot],[],
+    ['  La Quinta Muni Revs Tourist Taxes (11%)',XM(o.tax)],
+    ['  Cleaning Fees (with Turno Fees)',XM(orptNum(u,'oClean'))],
+    ['  Booking Platform Fees (Air BNB /VRBO)',XM(o.platformFees)],
+    ['  Payment processing fees',XM(orptNum(u,'oPay'))],
+    ['  Property Management Software Fee (Per listing)',XM(orptNum(u,'oPms'))],
+    ['  Dynamic Pricing Software Fee (Per listing)',XM(orptNum(u,'oPrice'))],
+    ['  Maintenance & Repairs',XM(orptNum(u,'oMaint'))],
+    ['  Furnishings - new or replacement',XM(orptNum(u,'oFurn'))],
+    ['  Expendables (Soap, TP, Amenities, Water, etc)',XM(orptNum(u,'oExpend'))],
+    ['  Total',XM(o.ownerExpTot)],[],
     ['Expenses (NOT Paid by Owner Bank or CC)'],
-    ['  Property Management Fees (of Gross Revenue)',o.mgmtFee],
-    ['  Cleaning Fees (with Turno Fees)',orptNum(u,'mClean')],
-    ['  Payment processing fees',orptNum(u,'mPay')],
-    ['  Property Management Software Fee (Per listing)',o.pms],
-    ['  Dynamic Pricing Software Fee (Per listing)',o.pricing],
-    ['  Maintenance & Repairs',orptNum(u,'mMaint')],
-    ['  Furnishings - new or replacement',orptNum(u,'mFurn')],
-    ['  Expendables (Soap, TP, Amenities, Water, etc)',orptNum(u,'mExpend')],
-    ['  Total',o.mgmtExpTot],[],
-    ['Total Expenses',o.totalExp],
-    ['Gross Revenue - Expenses = Net Income',o.netIncome],[],
+    ['  Property Management Fees (of Gross Revenue)',XM(o.mgmtFee)],
+    ['  Cleaning Fees (with Turno Fees)',XM(orptNum(u,'mClean'))],
+    ['  Payment processing fees',XM(orptNum(u,'mPay'))],
+    ['  Property Management Software Fee (Per listing)',XM(o.pms)],
+    ['  Dynamic Pricing Software Fee (Per listing)',XM(o.pricing)],
+    ['  Maintenance & Repairs',XM(orptNum(u,'mMaint'))],
+    ['  Furnishings - new or replacement',XM(orptNum(u,'mFurn'))],
+    ['  Expendables (Soap, TP, Amenities, Water, etc)',XM(orptNum(u,'mExpend'))],
+    ['  Total',XM(o.mgmtExpTot)],[],
+    ['Total Expenses',XM(o.totalExp)],
+    ['Gross Revenue - Expenses = Net Income',XM(o.netIncome)],[],
     ['Notes / Issues:'],[o.notes||'']);
   return a;}
 function excelStatement(u){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ownerAoa(u)),safeName(u));XLSX.writeFile(wb,`Owner_${u} ${CURMONTH} Statement.xlsx`.replace(/\s+/g,'_'));}
@@ -1243,7 +1245,7 @@ function unitSheetAoa(code,list){
   const cfgU=unitCfg(code);
   const aoa=[['La Quinta TOT Booking Report'],['Unit',code],['Property',name],['Property address',cfgU.addr||''],['STVR permit no.',cfgU.permit||''],['Filing period',curMonthName()],[],
     ['Guest','Confirmation','Check-in','Check-out','Nights','Rent collected','TOT 10%','TBID 1%','Total tax','Note']];
-  taxable.forEach(r=>{const t=taxOf(r);aoa.push([r.guest,r.confRaw||r.conf,r.ci?r.ci.toLocaleDateString('en-US'):'',r.co?r.co.toLocaleDateString('en-US'):'',r.nights,r2(r.filedBase),t.tot,t.tbid,t.total,r.note||'']);});
+  taxable.forEach(r=>{const t=taxOf(r);aoa.push([r.guest,r.confRaw||r.conf,r.ci?r.ci.toLocaleDateString('en-US'):'',r.co?r.co.toLocaleDateString('en-US'):'',XN(r.nights),XM(r.filedBase),XM(t.tot),XM(t.tbid),XM(t.total),r.note||'']);});
   if(!taxable.length)aoa.push(['(no taxable rental activity this period)','','','','',0,0,0,0,'']);
   aoa.push([],['FILING SUMMARY (enter on MuniRevs)']);
   const byTier=groupBy(taxable,r=>r.tier);
@@ -1254,12 +1256,12 @@ function unitSheetAoa(code,list){
       ['  Property address',c.addr||'(not set)'],['  STVR permit no.',c.permit||'(not set)'],
       ['  Print name',sg.name||'(not set)'],['  Title',sg.title||'Manager'],[],
       ['Then enter zeros on the La Quinta form'],
-      ['  Line 1 Reservations',0],['  Line 2 Nights',0],['  Line 3 Rent collected',0],['  TOT (10%)',0],['  TBID (1%)',0],['  Total due',0],['  Check out at',0],[]);
+      ['  Line 1 Reservations',XN(0)],['  Line 2 Nights',XN(0)],['  Line 3 Rent collected',XM(0)],['  TOT (10%)',XM(0)],['  TBID (1%)',XM(0)],['  Total due',XM(0)],['  Check out at',XM(0)],[]);
   } else for(const [tier,g] of byTier){
     const form=tier==='full'?'Standard TOT form (11%)':'Non-TBID TOT form (10%, no TBID)';
     const tt=g.reduce((a,r)=>{const x=taxOf(r);a.tot+=x.tot;a.tbid+=x.tbid;a.total+=x.total;return a;},{tot:0,tbid:0,total:0});
-    aoa.push([form],['  Line 1 Reservations',g.length],['  Line 2 Nights',g.reduce((s,r)=>s+r.nights,0)],
-      ['  Line 3 Rent collected',r2(g.reduce((s,r)=>s+r.filedBase,0))],['  TOT (10%)',r2(tt.tot)],['  TBID (1%)',r2(tt.tbid)],['  Total due',r2(tt.total)],[]);
+    aoa.push([form],['  Line 1 Reservations',XN(g.length)],['  Line 2 Nights',XN(g.reduce((s,r)=>s+r.nights,0))],
+      ['  Line 3 Rent collected',XM(g.reduce((s,r)=>s+r.filedBase,0))],['  TOT (10%)',XM(tt.tot)],['  TBID (1%)',XM(tt.tbid)],['  Total due',XM(tt.total)],[]);
   }
   const longs=list.filter(r=>r.tier==='exempt');
   if(longs.length)aoa.push(['Long-term stays this period (30+ nights, exempt — no tax, not listed above)'],
