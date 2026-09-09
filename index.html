@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.26.1</title>
+<title>La Quinta TOT Tool — v0.26.4</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -386,7 +386,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.26.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.26.4 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -593,7 +593,12 @@ function computeOwner(u){
      contains the tax the guest paid. Distribution = what arrived, less what we retain.
      Net income adds the tax collected back in, because it is subtracted again as an owner expense
      when the owner remits it; without this the tax would be counted against them twice. */
-  const grossDist=r2(R-mgmtExpTot);
+  /* Base the distribution on what Airbnb OWES for the month, not on what has physically cleared.
+     A payout that lands after month end would otherwise show the owner a reduced — or negative —
+     distribution for a month they actually earned in. */
+  const owed=r2(rs.reduce((a,r)=>a+(typeof r.monthPayout==='number'?r.monthPayout:r.payout),0));
+  const grossDist=r2(owed-mgmtExpTot);
+  const notYetPaid=r2(owed-received);
   const netIncome=r2(grossRev+tax-totalExp);
   const bookedNights=rs.reduce((s,r)=>s+(r.nights>=30?nightsInMonth(r,curMonthName()):r.nights),0);
   const days=monthDays(curMonthName());
@@ -603,7 +608,8 @@ function computeOwner(u){
   return {u,cfg,rs,gross,payoutTot,tax,R,hasDeposits,mgmtFee,pms,pricing,manMgmt,manOwner,
     mgmtCharged,distribution,ownerPaid,ownerNet,longTerm,covShort,received,owners,perOwner,shareTot,
     accomRev,autoClean,autoPet,manOtherRev,otherRev,grossRev,platformFees,ownerExpTot,mgmtExpTot,
-    totalExp,netIncome,grossDist,bookedNights,days,occRatio,adr,cashOnHand,notes:orpt(u).notes||''};
+    totalExp,netIncome,grossDist,bookedNights,days,occRatio,adr,cashOnHand,owed,notyet:notYetPaid,
+    notes:orpt(u).notes||''};
 }
 let OSET_OPEN=new Set();function renderOwnerSetup(){
   document.getElementById('ownerSetupPanel').classList.remove('hidden');
@@ -810,7 +816,7 @@ function statementSheet(u){
           <tr><td><b>Less Expenses (Not Paid by Owner Bank or CC)</b></td><td class="r am">${m(o.mgmtExpTot)}</td></tr>
           <tr><td><b>La Quinta Taxes Collected (to be Paid)</b></td><td class="r gr">${m(o.tax)}</td></tr>
           <tr><td><b>Gross Distribution includes (Taxes to be Paid)</b></td><td class="r gr">${m(o.grossDist)}</td></tr></table>
-        <div style="font-size:11px;color:#5a6572;margin-top:3px">Amount deposited to your account. Includes the ${m(o.tax)} of city tax collected from guests, which is paid to La Quinta from your account.</div>
+        <div style="font-size:11px;color:#5a6572;margin-top:3px">Amount deposited to your account. Includes the ${m(o.tax)} of city tax collected from guests, which is paid to La Quinta from your account.${o.notyet>1?` <b>${m(o.notyet)}</b> of this month's earnings is paid out by Airbnb after month end and will reach your account shortly.`:''}</div>
         <table class="og" style="margin-top:12px">
           <tr><td class="lbl">Number of days in Month</td><td class="r">${o.days}</td></tr>
           <tr><td class="lbl">Occupancy Ratio</td><td class="r">${o.occRatio.toFixed(2)}%</td></tr>
@@ -1274,7 +1280,12 @@ function autoMatchDeposits(){
       if(score>0&&(!best||score>best.score))best={r,score,why};});
     if(best){d.allocs=[{conf:best.r.conf,custom:null,amt:d.amt}];d.suggested=true;d.hint=best.why;}
     else{const stillOpen=RES.some(r=>{const wp=(typeof r.monthPayout==='number'?r.monthPayout:r.payout);return wp>0.01&&Math.abs(covered(r.conf)-wp)>=0.5;});
-      d.hint=!stillOpen?'every booking this month is already matched — this is revenue from a prior month (Airbnb pays about a day after check-in), so leave it unallocated'
+      /* Airbnb pays about a day after check-in, so a statement that runs past month end will also
+         contain payouts for NEXT month's check-ins. Those are not this month's business. */
+      const mIdx=MONTHS.indexOf(curMonthName().split(' ')[0]);
+      const after=dd&&mIdx>=0&&dd.getMonth()>mIdx;
+      d.hint=after?'dated after '+curMonthName()+' — this is a payout for a check-in next month, so leave it unallocated here; it will match when you close that month'
+        :!stillOpen?'every booking this month is already matched — this is revenue from a prior month (Airbnb pays about a day after check-in), so leave it unallocated'
         :(earliest&&dd&&dd<earliest)?'before your earliest check-in — likely prior-month (type a name below)':'likely a batched payout — use ＋ split to divide it';}
   });
   applySavedDep();
@@ -1546,7 +1557,7 @@ function render(){
         const collapseBtn=isDone?`<button class="mini depcollapse" data-i="${i}">▲ collapse</button> `:'';
         return `<tr><td class="l" style="white-space:normal"><b>${d.date}</b><div class="note">${d.ref}</div><div class="note">${d.channel||''}</div></td>
           <td>${money(d.amt)}</td><td class="l">${status(d)}</td>
-          <td class="l">${rows}<div style="margin-top:4px">${okBtn}${collapseBtn}<button class="mini aadd" data-di="${i}">＋ split</button> <span class="note ${sumc}">allocated ${money(s)} of ${money(d.amt)}${remTxt}</span></div>${balNotes}${d.hint?`<div class="note">${d.hint}</div>`:''}</td></tr>`;
+          <td class="l">${rows}<div style="margin-top:4px">${okBtn}${collapseBtn}<button class="mini aadd" data-di="${i}">＋ split</button> ${d.ref==='manual'?`<button class="mini depdel" data-i="${i}" style="border-color:#c98;color:var(--bad)">🗑 remove</button>`:''} <span class="note ${sumc}">allocated ${money(s)} of ${money(d.amt)}${remTxt}</span></div>${balNotes}${d.hint?`<div class="note">${d.hint}</div>`:''}</td></tr>`;
       }).join('')+`</tbody>`;
   }
   // expenses
@@ -1577,6 +1588,10 @@ function render(){
     const d=DEPOSITS[+e.target.dataset.di],a=d.allocs[+e.target.dataset.ai];a.amt=r2(numify(e.target.value));d.suggested=false;saveState();render();}));
   document.querySelectorAll('button.adel').forEach(el=>el.addEventListener('click',e=>{
     const d=DEPOSITS[+e.target.dataset.di];d.allocs.splice(+e.target.dataset.ai,1);d.suggested=false;saveState();render();}));
+  document.querySelectorAll('button.depdel').forEach(el=>el.addEventListener('click',e=>{
+    const i=+e.currentTarget.dataset.i;const d=DEPOSITS[i];if(!d)return;
+    if(!confirm('Remove this manually added deposit of '+money(d.amt)+' dated '+(d.date||'—')+'?\n\nOnly deposits you typed in can be removed; ones read from the bank statement stay.'))return;
+    DEPOSITS.splice(i,1);autoMatchDeposits();saveState();render();}));
   document.querySelectorAll('button.aadd').forEach(el=>el.addEventListener('click',e=>{
     const d=DEPOSITS[+e.target.dataset.di];const s=d.allocs.reduce((t,a)=>t+(a.amt||0),0);const rem=r2(d.amt-s);
     d.allocs.push({conf:null,custom:null,amt:rem>0?rem:0});d.suggested=false;saveState();render();}));
@@ -1961,7 +1976,11 @@ document.getElementById('clrState').addEventListener('click',()=>{
   const m=monthsStore();delete m[CURMONTH];try{localStorage.setItem(LS_MONTHS,JSON.stringify(m));}catch(e){}
   newMonth();populateMonths();
 });
-document.getElementById('addDep').addEventListener('click',()=>{const dt=prompt('Deposit date (e.g. 6/15)?')||'';const am=numify(prompt('Amount?'));if(am){DEPOSITS.push({date:dt,ref:'manual',amt:r2(am),channel:'—',allocs:[]});autoMatchDeposits();render();}});
+document.getElementById('addDep').addEventListener('click',()=>{
+  const dt=prompt('Deposit date (e.g. 9/1)?')||'';const am=numify(prompt('Amount?'));
+  if(!am)return;
+  DEPOSITS.push({date:dt,ref:'manual',amt:r2(am),channel:'—',allocs:[]});
+  autoMatchDeposits();saveState();render();});
 </script>
 </body>
 </html>
