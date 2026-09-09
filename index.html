@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.24.0</title>
+<title>La Quinta TOT Tool — v0.24.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -379,7 +379,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.24.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.24.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -579,8 +579,8 @@ let OSET_OPEN=new Set();function renderOwnerSetup(){
       <div class="propRec" style="border:1px solid ${(!c.addr||!c.permit)?'#e8bfc2':'var(--line)'};background:${(!c.addr||!c.permit)?'#fdf1f2':'#fbfcfe'};border-radius:8px;padding:8px 10px;margin:8px 0">
         <div class="note" style="margin-bottom:5px"><b>Property record</b> — used on the No Rental Activity form and every city report. Enter once; it is kept for all months.</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <label class="note">Property address <input class="oset ucfg" data-u="${u}" data-f="addr" value="${(c.addr||'').replace(/"/g,'&quot;')}" placeholder="50660 Santa Rosa Plaza Unit 5" style="width:250px"></label>
-          <label class="note">STVR permit no. <input class="oset ucfg" data-u="${u}" data-f="permit" value="${(c.permit||'').replace(/"/g,'&quot;')}" placeholder="260540" style="width:100px"></label>
+          <label class="note">Property address <input class="oset ucfg" data-u="${u}" data-f="addr" value="${(c.addr||'').replace(/"/g,'&quot;')}" placeholder="e.g. 50660 Santa Rosa Plaza Unit 5" style="width:250px"></label>
+          <label class="note">STVR permit no. <input class="oset ucfg" data-u="${u}" data-f="permit" value="${(c.permit||'').replace(/"/g,'&quot;')}" placeholder="e.g. 260540" style="width:100px"></label>
           ${(!c.addr||!c.permit)?'<span class="flagtag">MISSING</span>':'<span class="badge b-full">complete</span>'}
         </div></div>
       <div class="obody">${ownerRows||'<div class="note">No owners yet.</div>'}
@@ -1565,7 +1565,12 @@ function downloadMaster(){
 
 /* ---------- file handling ---------- */
 /* ---------- shell: router + months ---------- */
-const LS_MONTHS='lqtot_months_v1';let CURMONTH='';let CURVIEW='home';
+const LS_MONTHS='lqtot_months_v1';const LS_LASTMO='lqtot_lastmonth_v1';
+/* Month keys are display names ("July 2026"), so a plain text sort puts June before July.
+   Sort on the real date instead. */
+function monthKeyVal(n){const p=String(n).trim().split(/\s+/);const i=MONTHS.indexOf(p[0]);
+  return (i<0)?0:(+p[1]||0)*12+i;}
+function monthsSorted(m){return Object.keys(m||{}).sort((a,b)=>monthKeyVal(b)-monthKeyVal(a));}let CURMONTH='';let CURVIEW='home';
 /* ---------- v0.8.8: 7-step month-close tracker ---------- */
 const LS_STEPS='lqtot_steps_v1';
 const STEP_DEFS=[
@@ -1694,8 +1699,10 @@ function loadMonth(name){const snap=monthsStore()[name];if(!snap)return;RES=hydR
   applySavedRes();applyExclusions();applyMonthPayouts();applySavedDep();
   document.getElementById('homeStatus').classList.remove('hidden');
   document.getElementById('dropCsv').classList.toggle('done',RES.length>0);document.getElementById('dropPdf').classList.toggle('done',DEPOSITS.length>0);document.getElementById('dropAir').classList.toggle('done',!!AIRBNB);
-  document.getElementById('viewSub').textContent=name;render();populateMonths();updateDropStats();}
-function populateMonths(){const m=monthsStore();const sel=document.getElementById('monthSel');if(!sel)return;const names=Object.keys(m).sort().reverse();
+  document.getElementById('viewSub').textContent=name;render();populateMonths();updateDropStats();
+  lset(LS_LASTMO,{name:CURMONTH});
+}
+function populateMonths(){const m=monthsStore();const sel=document.getElementById('monthSel');if(!sel)return;const names=monthsSorted(m);
   sel.innerHTML=(names.length?names:['(no months yet)']).map(n=>`<option${n===CURMONTH?' selected':''}>${n}</option>`).join('');}
 function newMonth(){RES=[];DEPOSITS=[];AIRBNB=null;['homeStatus','reconPanel','depPanel','ownerRptPanel','ownerExpPanel','ownerSetupPanel','expPanel'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.add('hidden');});
   document.getElementById('newMonthArea').classList.remove('hidden');document.getElementById('dropCsv').classList.remove('done');document.getElementById('dropPdf').classList.remove('done');document.getElementById('dropAir').classList.remove('done');
@@ -1719,7 +1726,7 @@ function renderListings(){
   el.innerHTML=toolbar+`<table><thead><tr><th class="l">Listing</th><th class="l">Owners</th><th>Res.</th><th>Tax</th><th>Distribution</th></tr></thead><tbody>`+rows+`</tbody></table>`;
   wireAddListing('listings');
 }
-function renderHistory(){const m=monthsStore();const el=document.getElementById('historyList');const names=Object.keys(m).sort().reverse();
+function renderHistory(){const m=monthsStore();const el=document.getElementById('historyList');const names=monthsSorted(m);
   el.innerHTML=names.length?names.map(n=>`<div class="oline"><span><b>${n}</b> &middot; <span class="note">saved ${new Date(m[n].savedAt).toLocaleDateString('en-US')}</span></span><button class="btn sm ghost loadmo" data-m="${n}">Open</button></div>`).join(''):'<div class="note">No saved months yet. Process one from Home.</div>';
   el.querySelectorAll('.loadmo').forEach(b=>b.addEventListener('click',e=>{loadMonth(e.target.dataset.m);setView('home');}));}
 function updateDropStats(){const c=document.getElementById('csvStat'),p=document.getElementById('pdfStat'),a=document.getElementById('airStat');
@@ -1849,7 +1856,11 @@ document.querySelectorAll('.navitem').forEach(n=>n.addEventListener('click',()=>
 document.getElementById('newMonthBtn').addEventListener('click',newMonth);
 document.getElementById('monthSel').addEventListener('change',e=>{const v=e.target.value;if(v&&monthsStore()[v])loadMonth(v);});
 populateMonths();
-(function boot(){var hl=document.getElementById('hdrLogo');if(hl)hl.src=LOGO;refreshSteps();const m=monthsStore();const names=Object.keys(m).sort().reverse();if(names.length)loadMonth(names[0]);})();
+(function boot(){var hl=document.getElementById('hdrLogo');if(hl)hl.src=LOGO;refreshSteps();
+  const m=monthsStore();const names=monthsSorted(m);
+  const last=(lget(LS_LASTMO)||{}).name;
+  const open=(last&&m[last])?last:names[0];
+  if(open)loadMonth(open);})();
 document.getElementById('addExp').addEventListener('click',()=>{OWNEREXP.push({unit:unitList()[0]||'',desc:'',amount:0,paidBy:'owner'});saveExp();renderOwnerExp();renderOwnerReports();});
 document.getElementById('dlMaster').addEventListener('click',downloadMaster);
 document.getElementById('expState').addEventListener('click',()=>{
