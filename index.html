@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.26.5</title>
+<title>La Quinta TOT Tool — v0.27.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -324,6 +324,7 @@
         <h2>Airbnb deposits &mdash; match to reservations</h2>
         <div id="depControl" class="cards" style="margin-bottom:14px"></div>
         <p class="note" style="margin-top:-4px">Auto-matched by amount. Split a deposit or type a prior-month name for the rest.</p>
+        <div id="depPlan"></div>
         <div style="overflow-x:auto"><table id="depTable"></table></div>
         <button class="btn sm ghost" id="addDep" style="margin-top:10px">+ Add deposit manually</button>
       </div>
@@ -386,7 +387,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.26.5 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.27.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -1516,10 +1517,44 @@ function render(){
   if(DEPOSITS.length){
     document.getElementById('depPanel').classList.remove('hidden');
     const total=r2(DEPOSITS.reduce((s,d)=>s+d.amt,0));
-    const alloc=r2(DEPOSITS.reduce((s,d)=>s+(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0),0));
+    const alloc=r2(DEPOSITS.reduce((s,d)=>s+(d.allocs||[]).reduce((t,a)=>t+((a.conf||typeof a.custom==='string')?(a.amt||0):0),0),0));
     document.getElementById('depControl').innerHTML=[
       ['Total Airbnb deposits',money(total)],['Allocated',money(alloc)],['Unallocated',money(r2(total-alloc)),r2(total-alloc)>0.01?'flag':'']
     ].map(([l,n,c])=>`<div class="kpi ${c||''}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    /* Work out what still needs matching on both sides and say it plainly, so the answer does not
+       have to be reverse-engineered from a dropdown. */
+    (function(){
+      const el=document.getElementById('depPlan');if(!el)return;
+      const paid=d=>(d.allocs||[]).reduce((t,x)=>t+((x.conf||typeof x.custom==='string')?(x.amt||0):0),0);
+      const openB=monthRes().map(r=>{const owed=r2(typeof r.monthPayout==='number'?r.monthPayout:r.payout);
+        return {r,left:r2(owed-r2(covered(r.conf)))};}).filter(x=>x.left>0.5);
+      const freeD=DEPOSITS.filter(d=>Math.abs(paid(d)-d.amt)>0.01);
+      if(!openB.length&&!freeD.length){el.innerHTML='<div class="item okitem">Every deposit is tied to a booking, and every booking this month is paid.</div>';return;}
+      const dT=r2(freeD.reduce((a,d)=>a+r2(d.amt-paid(d)),0));
+      const bT=r2(openB.reduce((a,x)=>a+x.left,0));
+      let html='';
+      if(freeD.length&&openB.length&&Math.abs(dT-bT)<0.02){
+        const ds=freeD.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+        const bs=openB.slice().sort((a,b)=>(a.r.ci&&b.r.ci?a.r.ci-b.r.ci:0));
+        const steps=[];let di=0,left=ds.length?r2(ds[0].amt-paid(ds[0])):0;
+        bs.forEach(x=>{let need=x.left;
+          while(need>0.005&&di<ds.length){const take=r2(Math.min(need,left));
+            if(take>0.005)steps.push(`<b>${ds[di].date} &nbsp;${money(ds[di].amt)}</b> &rarr; ${x.r.unitCode} &middot; ${x.r.guest}${Math.abs(take-ds[di].amt)>0.01?` &nbsp;<i>(only ${money(take)} of it — press ＋ split)</i>`:''}`);
+            need=r2(need-take);left=r2(left-take);
+            if(left<=0.005){di++;left=di<ds.length?r2(ds[di].amt-paid(ds[di])):0;}}});
+        html=`<div class="item okitem"><b>Here is what matches.</b> ${money(dT)} of unassigned deposits covers ${money(bT)} still owed on ${bs.length} booking(s) — the totals agree exactly.
+          <div style="margin-top:6px;line-height:1.9">${steps.map(t=>'&middot; '+t).join('<br>')}</div></div>`;
+      } else {
+        const dl=freeD.map(d=>`${d.date} ${money(r2(d.amt-paid(d)))}`).join(', ')||'none';
+        const bl=openB.map(x=>`${x.r.guest} (${x.r.unitCode}) ${money(x.left)}`).join(', ')||'none';
+        const diff=r2(Math.abs(dT-bT));
+        html=`<div class="item warnitem"><b>Not balanced yet.</b><br>
+          Deposits still to assign: ${dl} &nbsp;=&nbsp; <b>${money(dT)}</b><br>
+          Bookings still unpaid: ${bl} &nbsp;=&nbsp; <b>${money(bT)}</b>
+          ${diff>0.02?`<div class="note" style="margin-top:5px">They differ by ${money(diff)} — either a payout has not landed yet, which is normal near month end, or a deposit is missing from the statement.</div>`:''}</div>`;
+      }
+      el.innerHTML=html;
+    })();
     const tgtOpts=a=>{
       /* Show what this month OWES and what is still outstanding — the whole-booking figure is
          meaningless here, because a long stay is paid across several months. */
@@ -1535,14 +1570,14 @@ function render(){
         list.map(o=>`<option value="${o.conf}"${a.conf===o.conf?' selected':''}>${o.cov?'✓ ':''}${o.label}</option>`).join('')+
         `<option value="__custom__"${!a.conf&&typeof a.custom==='string'?' selected':''}>Other / prior-month — label only, credits no unit</option>`;
     };
-    const status=d=>{const s=(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0);
+    const status=d=>{const s=(d.allocs||[]).reduce((t,a)=>t+((a.conf||typeof a.custom==='string')?(a.amt||0):0),0);
       if(d.suggested)return '<span style="color:var(--warn);font-weight:600">~ suggested</span>';
       if(!d.allocs.length)return '<span class="unmatched">— review</span>';
       if(Math.abs(s-d.amt)<0.01)return '<span class="matched">✓ done</span>';
       return '<span class="unmatched">⚠ partial</span>';};
     document.getElementById('depTable').innerHTML=`<thead><tr><th class="l">Deposit</th><th>Amount</th><th class="l">Status</th><th class="l">Allocation(s)</th></tr></thead><tbody>`+
       DEPOSITS.map((d,i)=>{
-        const s=(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0);
+        const s=(d.allocs||[]).reduce((t,a)=>t+((a.conf||typeof a.custom==='string')?(a.amt||0):0),0);
         const key=depKey(d);
         const isDone=!d.suggested&&(d.allocs||[]).length>0&&Math.abs(s-d.amt)<0.01;
         const collapsed=isDone&&!DEP_OPEN.has(key);
@@ -1709,7 +1744,7 @@ function renderStepStrip(strip){
 }
 function navIssueCount(view){
   if(view==='citytax')return RES.filter(r=>!r.reviewed).length;
-  if(view==='revenue')return DEPOSITS.filter(d=>{const s=(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0);return Math.abs(s-d.amt)>=0.01;}).length;
+  if(view==='revenue')return DEPOSITS.filter(d=>{const s=(d.allocs||[]).reduce((t,a)=>t+((a.conf||typeof a.custom==='string')?(a.amt||0):0),0);return Math.abs(s-d.amt)>=0.01;}).length;
   return 0;
 }
 function renderNavBadges(){
@@ -1729,7 +1764,7 @@ function reconChecks(){
   let stmtTax=0;[...new Set(MR.map(r=>r.unitCode))].forEach(u=>stmtTax+=computeOwner(u).tax);stmtTax=r2(stmtTax);
   const needRev=MR.filter(r=>!r.reviewed).length;
   const totalDep=r2(DEPOSITS.reduce((s,d)=>s+d.amt,0));
-  const alloc=r2(DEPOSITS.reduce((s,d)=>s+(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0),0));
+  const alloc=r2(DEPOSITS.reduce((s,d)=>s+(d.allocs||[]).reduce((t,a)=>t+((a.conf||typeof a.custom==='string')?(a.amt||0):0),0),0));
   const unalloc=r2(totalDep-alloc);
   const noOwner=[...new Set(monthRes().map(r=>r.unitCode))].filter(u=>!(unitCfg(u).owners||[]).some(o=>o.name));
   const AX2=airCross();
