@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.28.0</title>
+<title>La Quinta TOT Tool — v0.28.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -387,7 +387,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.28.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.28.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -588,9 +588,12 @@ function computeOwner(u){
   const manOtherRev=r2(OREV_FIELDS.reduce((s,f)=>s+orptNum(u,f[0]),0));
   const otherRev=r2(autoClean+autoPet+manOtherRev);
   const grossRev=r2(accomRev+otherRev);            // revenue only — the management fee basis
-  const grossCollected=r2(grossRev+tax);           // every dollar Airbnb collected for this unit
   const platformFees=r2(rs.reduce((s,r)=>s+(r.commission||0)*((r.payout>0)?(r.monthPayout/r.payout):0),0));
-  const ownerExpTot=r2(tax+platformFees+manOwner);
+  /* Airbnb deducts its service fee before paying, so that money never reaches the owner. Showing it
+     as revenue AND as an expense inflates both sides; deduct it here so the revenue column totals to
+     the amount actually deposited. */
+  const grossCollected=r2(grossRev+tax-platformFees);
+  const ownerExpTot=r2(tax+manOwner);
   const mgmtExpTot=mgmtCharged;
   const totalExp=r2(ownerExpTot+mgmtExpTot);
   /* Cash truth: Airbnb deducts its fee before paying us, so R is what actually arrived — it already
@@ -790,10 +793,10 @@ function statementSheet(u){
     revRow('Direct Booking Fees',orptNum(u,'directFees')),revRow('Early Check in / Late Check out fee',orptNum(u,'earlyLate')),
     revRow('Concierge Services',orptNum(u,'concierge')),revRow('Damage Fees',orptNum(u,'damage')),
     revRow('Cancellation Fees',orptNum(u,'cancelFees')),revRow('Other Income',orptNum(u,'otherInc')),
-    revRow('La Quinta Taxes Collected from guests',o.tax)].join('');
+    revRow('La Quinta Taxes Collected from guests',o.tax),
+    `<tr><td class="lbl">Less Airbnb service fee <i style="font-weight:400">— deducted before payout</i></td><td class="r">&minus; ${m(o.platformFees)}</td></tr>`].join('');
   const ownerExpRows=[revRow('La Quinta Muni Revs Tourist Taxes (11%)',o.tax),
     revRow('Cleaning Fees (with Turno Fees)',r2(orptNum(u,'oClean')+turnoFor(u))),
-    revRow('Booking Platform Fees (Air BNB /VRBO) <i style="font-weight:400">— deducted by Airbnb before payout</i>',o.platformFees),
     revRow('Payment processing fees',orptNum(u,'oPay')),
     revRow('Property Management Software Fee (Per listing)',orptNum(u,'oPms')),
     revRow('Dynamic Pricing Software Fee (Per listing)',orptNum(u,'oPrice')),
@@ -821,7 +824,7 @@ function statementSheet(u){
           ${bk}
           <tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(o.accomRev)}</td><td class="lbl"><b>Total Days</b></td><td class="c gr">${o.bookedNights}</td></tr></table>
         <div class="ost">Other Revenue</div>
-        <table class="og">${otherRows}<tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(r2(o.otherRev+o.tax))}</td></tr></table>
+        <table class="og">${otherRows}<tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(r2(o.otherRev+o.tax-o.platformFees))}</td></tr></table>
         <table class="og" style="margin-top:12px">
           <tr><td><b>Gross Collected Revenue</b></td><td class="r gr">${m(o.grossCollected)}</td></tr>
           <tr><td><b>Less Expenses (Not Paid by Owner Bank or CC)</b></td><td class="r am">${m(o.mgmtExpTot)}</td></tr>
@@ -922,8 +925,8 @@ async function buildOwnerPdfDoc(units){
     [['Owner Stay Revenue',orptNum(u,'ownerStay')],['Cleaning Fees',o.autoClean],['Mid Stay Cleaning fees',orptNum(u,'midClean')],
      ['Pet Fees',o.autoPet],['Direct Booking Fees',orptNum(u,'directFees')],['Early Check in / Late Check out fee',orptNum(u,'earlyLate')],
      ['Concierge Services',orptNum(u,'concierge')],['Damage Fees',orptNum(u,'damage')],['Cancellation Fees',orptNum(u,'cancelFees')],
-     ['Other Income',orptNum(u,'otherInc')],['La Quinta Taxes Collected from guests',o.tax]].forEach(function(p3){ly=row(LX,ly,colW,p3[0],pdfMoney(p3[1]),{sz:7.2});});
-    ly=row(LX,ly,colW,'Total',pdfMoney(r2(o.otherRev+o.tax)),{bold:true,fill:green});
+     ['Other Income',orptNum(u,'otherInc')],['La Quinta Taxes Collected from guests',o.tax],['Less Airbnb service fee (deducted before payout)',-o.platformFees]].forEach(function(p3){ly=row(LX,ly,colW,p3[0],pdfMoney(p3[1]),{sz:7.2});});
+    ly=row(LX,ly,colW,'Total',pdfMoney(r2(o.otherRev+o.tax-o.platformFees)),{bold:true,fill:green});
     ly-=8;
     ly=row(LX,ly,colW,'Gross Collected Revenue',pdfMoney(o.grossCollected),{bold:true,fill:green});
     ly=row(LX,ly,colW,'Less Expenses (Not Paid by Owner Bank or CC)',pdfMoney(o.mgmtExpTot),{bold:true,fill:amber,valCol:red,sz:6.8});
@@ -936,12 +939,12 @@ async function buildOwnerPdfDoc(units){
     ly=row(LX,ly,colW,'Average Nightly Rate',pdfMoney(o.adr));
     ry=sect(RX,ry,'Expenses (Paid by Owner Bank or CC)');
     [['La Quinta Muni Revs Tourist Taxes (11%)',o.tax],['Cleaning Fees (with Turno Fees)',r2(orptNum(u,'oClean')+turnoFor(u))],
-     ['Booking Platform Fees (Air BNB /VRBO)',o.platformFees],['Payment processing fees',orptNum(u,'oPay')],
+['Payment processing fees',orptNum(u,'oPay')],
      ['Property Management Software Fee (Per listing)',orptNum(u,'oPms')],['Dynamic Pricing Software Fee (Per listing)',orptNum(u,'oPrice')],
      ['Maintenance & Repairs',orptNum(u,'oMaint')],['Furnishings - new or replacement',orptNum(u,'oFurn')],
      ['Expendables (Soap, TP, Amenities, Water, etc)',orptNum(u,'oExpend')]].forEach(function(p4){ry=row(RX,ry,colW,p4[0],pdfMoney(p4[1]),{sz:6.8});});
     ry=row(RX,ry,colW,'Total',pdfMoney(o.ownerExpTot),{bold:true,fill:amber,valCol:red});
-    txt('Platform fees are deducted by Airbnb before payout.',RX,ry-8,6,F,grey);ry-=14;
+    ry-=6;
     ry=sect(RX,ry,'Expenses (NOT Paid by Owner Bank or CC)');
     [['Property Management Fees (of Gross Revenue)',o.mgmtFee],['Cleaning Fees (with Turno Fees)',orptNum(u,'mClean')],
      ['Payment processing fees',orptNum(u,'mPay')],['Property Management Software Fee (Per listing)',o.pms],
@@ -1034,7 +1037,8 @@ function ownerAoa(u){
     ['  Concierge Services',XM(orptNum(u,'concierge'))],['  Damage Fees',XM(orptNum(u,'damage'))],
     ['  Cancellation Fees',XM(orptNum(u,'cancelFees'))],['  Other Income',XM(orptNum(u,'otherInc'))],
     ['  La Quinta Taxes Collected from guests',XM(o.tax)],
-    ['  Total',XM(r2(o.otherRev+o.tax))],[],
+    ['  Less Airbnb service fee (deducted before payout)',XM(-o.platformFees)],
+    ['  Total',XM(r2(o.otherRev+o.tax-o.platformFees))],[],
     ['Gross Collected Revenue',XM(o.grossCollected)],
     ['Less Expenses (Not Paid by Owner Bank or CC)',XM(o.mgmtExpTot)],
     ['La Quinta Taxes Collected (to be Paid)',XM(o.tax)],
@@ -1044,7 +1048,7 @@ function ownerAoa(u){
     ['Expenses (Paid by Owner Bank or CC)'],
     ['  La Quinta Muni Revs Tourist Taxes (11%)',XM(o.tax)],
     ['  Cleaning Fees (with Turno Fees)',XM(r2(orptNum(u,'oClean')+turnoFor(u)))],
-    ['  Booking Platform Fees (Air BNB /VRBO) - deducted by Airbnb before payout',XM(o.platformFees)],
+
     ['  Payment processing fees',XM(orptNum(u,'oPay'))],
     ['  Property Management Software Fee (Per listing)',XM(orptNum(u,'oPms'))],
     ['  Dynamic Pricing Software Fee (Per listing)',XM(orptNum(u,'oPrice'))],
