@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.27.2</title>
+<title>La Quinta TOT Tool — v0.28.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -387,7 +387,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.27.2 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.28.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -568,7 +568,9 @@ function computeOwner(u){
   const mgmtFee=r2(grossForFee*((+cfg.mgmt||0)/100));
   const pms=+cfg.pms||0,pricing=+cfg.pricing||0;
   const manMgmt=r2(OEXP_MGMT.reduce((s,f)=>s+orptNum(u,f[0]),0));
-  const manOwner=r2(OEXP_OWNER.reduce((s,f)=>s+orptNum(u,f[0]),0));
+  /* turnoFor() is what the Turno import contributed to oClean. It is shown on the statement row,
+     so it must be inside the total too — otherwise the column does not add up. */
+  const manOwner=r2(OEXP_OWNER.reduce((s,f)=>s+orptNum(u,f[0]),0)+turnoFor(u));
   const mgmtCharged=r2(mgmtFee+pms+pricing+manMgmt);
   const distribution=r2(R-mgmtCharged);
   const ownerPaid=r2(tax+manOwner);
@@ -585,7 +587,8 @@ function computeOwner(u){
   const autoPet=r2(rs.reduce((s,r)=>s+(r.pet||0)*((r.nights>=30&&r.payout>0)?(r.monthPayout/r.payout):1),0));
   const manOtherRev=r2(OREV_FIELDS.reduce((s,f)=>s+orptNum(u,f[0]),0));
   const otherRev=r2(autoClean+autoPet+manOtherRev);
-  const grossRev=r2(accomRev+otherRev);
+  const grossRev=r2(accomRev+otherRev);            // revenue only — the management fee basis
+  const grossCollected=r2(grossRev+tax);           // every dollar Airbnb collected for this unit
   const platformFees=r2(rs.reduce((s,r)=>s+(r.commission||0)*((r.payout>0)?(r.monthPayout/r.payout):0),0));
   const ownerExpTot=r2(tax+platformFees+manOwner);
   const mgmtExpTot=mgmtCharged;
@@ -600,7 +603,7 @@ function computeOwner(u){
   const owed=r2(rs.reduce((a,r)=>a+(typeof r.monthPayout==='number'?r.monthPayout:r.payout),0));
   const grossDist=r2(owed-mgmtExpTot);
   const notYetPaid=r2(owed-received);
-  const netIncome=r2(grossRev+tax-totalExp);
+  const netIncome=r2(grossCollected-totalExp);
   const bookedNights=rs.reduce((s,r)=>s+(r.nights>=30?nightsInMonth(r,curMonthName()):r.nights),0);
   const days=monthDays(curMonthName());
   const occRatio=days?Math.min(100,r2(rs.reduce((s,r)=>s+nightsInMonth(r,curMonthName()),0)/days*100)):0;
@@ -608,7 +611,7 @@ function computeOwner(u){
   const cashOnHand=r2(R-mgmtExpTot);
   return {u,cfg,rs,gross,payoutTot,tax,R,hasDeposits,mgmtFee,pms,pricing,manMgmt,manOwner,
     mgmtCharged,distribution,ownerPaid,ownerNet,longTerm,covShort,received,owners,perOwner,shareTot,
-    accomRev,autoClean,autoPet,manOtherRev,otherRev,grossRev,platformFees,ownerExpTot,mgmtExpTot,
+    accomRev,autoClean,autoPet,manOtherRev,otherRev,grossRev,grossCollected,platformFees,ownerExpTot,mgmtExpTot,
     totalExp,netIncome,grossDist,bookedNights,days,occRatio,adr,cashOnHand,owed,notyet:notYetPaid,
     notes:orpt(u).notes||''};
 }
@@ -786,7 +789,8 @@ function statementSheet(u){
     revRow('Mid Stay Cleaning fees',orptNum(u,'midClean')),revRow('Pet Fees',o.autoPet),
     revRow('Direct Booking Fees',orptNum(u,'directFees')),revRow('Early Check in / Late Check out fee',orptNum(u,'earlyLate')),
     revRow('Concierge Services',orptNum(u,'concierge')),revRow('Damage Fees',orptNum(u,'damage')),
-    revRow('Cancellation Fees',orptNum(u,'cancelFees')),revRow('Other Income',orptNum(u,'otherInc'))].join('');
+    revRow('Cancellation Fees',orptNum(u,'cancelFees')),revRow('Other Income',orptNum(u,'otherInc')),
+    revRow('La Quinta Taxes Collected from guests',o.tax)].join('');
   const ownerExpRows=[revRow('La Quinta Muni Revs Tourist Taxes (11%)',o.tax),
     revRow('Cleaning Fees (with Turno Fees)',r2(orptNum(u,'oClean')+turnoFor(u))),
     revRow('Booking Platform Fees (Air BNB /VRBO) <i style="font-weight:400">— deducted by Airbnb before payout</i>',o.platformFees),
@@ -817,9 +821,9 @@ function statementSheet(u){
           ${bk}
           <tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(o.accomRev)}</td><td class="lbl"><b>Total Days</b></td><td class="c gr">${o.bookedNights}</td></tr></table>
         <div class="ost">Other Revenue</div>
-        <table class="og">${otherRows}<tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(o.otherRev)}</td></tr></table>
+        <table class="og">${otherRows}<tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(r2(o.otherRev+o.tax))}</td></tr></table>
         <table class="og" style="margin-top:12px">
-          <tr><td><b>Gross Revenue</b></td><td class="r gr">${m(o.grossRev)}</td></tr>
+          <tr><td><b>Gross Collected Revenue</b></td><td class="r gr">${m(o.grossCollected)}</td></tr>
           <tr><td><b>Less Expenses (Not Paid by Owner Bank or CC)</b></td><td class="r am">${m(o.mgmtExpTot)}</td></tr>
           <tr><td><b>La Quinta Taxes Collected (to be Paid)</b></td><td class="r gr">${m(o.tax)}</td></tr>
           <tr><td><b>Gross Distribution includes (Taxes to be Paid)</b></td><td class="r gr">${m(o.grossDist)}</td></tr></table>
@@ -836,7 +840,7 @@ function statementSheet(u){
         <table class="og">${mgmtExpRows}<tr><td class="lbl"><b>Total</b></td><td class="r am">${m(o.mgmtExpTot)}</td></tr></table>
         <table class="og" style="margin-top:12px">
           <tr><td class="lbl"><b>Total Expenses</b></td><td class="r am">${m(o.totalExp)}</td></tr>
-          <tr><td class="lbl"><b>Gross Revenue + Taxes Collected - Expenses = Net Income</b></td><td class="r gr">${m(o.netIncome)}</td></tr></table>
+          <tr><td class="lbl"><b>Gross Collected Revenue - Total Expenses = Net Income</b></td><td class="r gr">${m(o.netIncome)}</td></tr></table>
       </div>
     </div>
     <div class="onotes"><div class="t">Notes / Issues:</div><div class="b">${(o.notes||'').replace(/</g,'&lt;')||'&nbsp;'}</div></div>
@@ -918,10 +922,10 @@ async function buildOwnerPdfDoc(units){
     [['Owner Stay Revenue',orptNum(u,'ownerStay')],['Cleaning Fees',o.autoClean],['Mid Stay Cleaning fees',orptNum(u,'midClean')],
      ['Pet Fees',o.autoPet],['Direct Booking Fees',orptNum(u,'directFees')],['Early Check in / Late Check out fee',orptNum(u,'earlyLate')],
      ['Concierge Services',orptNum(u,'concierge')],['Damage Fees',orptNum(u,'damage')],['Cancellation Fees',orptNum(u,'cancelFees')],
-     ['Other Income',orptNum(u,'otherInc')]].forEach(function(p3){ly=row(LX,ly,colW,p3[0],pdfMoney(p3[1]),{sz:7.2});});
-    ly=row(LX,ly,colW,'Total',pdfMoney(o.otherRev),{bold:true,fill:green});
+     ['Other Income',orptNum(u,'otherInc')],['La Quinta Taxes Collected from guests',o.tax]].forEach(function(p3){ly=row(LX,ly,colW,p3[0],pdfMoney(p3[1]),{sz:7.2});});
+    ly=row(LX,ly,colW,'Total',pdfMoney(r2(o.otherRev+o.tax)),{bold:true,fill:green});
     ly-=8;
-    ly=row(LX,ly,colW,'Gross Revenue',pdfMoney(o.grossRev),{bold:true,fill:green});
+    ly=row(LX,ly,colW,'Gross Collected Revenue',pdfMoney(o.grossCollected),{bold:true,fill:green});
     ly=row(LX,ly,colW,'Less Expenses (Not Paid by Owner Bank or CC)',pdfMoney(o.mgmtExpTot),{bold:true,fill:amber,valCol:red,sz:6.8});
     ly=row(LX,ly,colW,'La Quinta Taxes Collected (to be Paid)',pdfMoney(o.tax),{bold:true,fill:green,sz:6.8});
     ly=row(LX,ly,colW,'Gross Distribution includes (Taxes to be Paid)',pdfMoney(o.grossDist),{bold:true,fill:green,sz:6.6});
@@ -947,7 +951,7 @@ async function buildOwnerPdfDoc(units){
     ry=row(RX,ry,colW,'Total',pdfMoney(o.mgmtExpTot),{bold:true,fill:amber,valCol:red});
     ry-=8;
     ry=row(RX,ry,colW,'Total Expenses',pdfMoney(o.totalExp),{bold:true,fill:amber,valCol:red});
-    ry=row(RX,ry,colW,'Gross Revenue + Taxes Collected - Expenses = Net Income',pdfMoney(o.netIncome),{bold:true,fill:green,sz:6.2});
+    ry=row(RX,ry,colW,'Gross Collected Revenue - Total Expenses = Net Income',pdfMoney(o.netIncome),{bold:true,fill:green,sz:6.2});
     let ny=Math.min(ly,ry)-14;
     const nh=42;box(LX,ny-nh,CW,nh);
     page.drawLine({start:{x:LX,y:ny-16},end:{x:LX+CW,y:ny-16},thickness:.6,color:line});
@@ -1029,8 +1033,9 @@ function ownerAoa(u){
     ['  Direct Booking Fees',XM(orptNum(u,'directFees'))],['  Early Check in / Late Check out fee',XM(orptNum(u,'earlyLate'))],
     ['  Concierge Services',XM(orptNum(u,'concierge'))],['  Damage Fees',XM(orptNum(u,'damage'))],
     ['  Cancellation Fees',XM(orptNum(u,'cancelFees'))],['  Other Income',XM(orptNum(u,'otherInc'))],
-    ['  Total',XM(o.otherRev)],[],
-    ['Gross Revenue',XM(o.grossRev)],
+    ['  La Quinta Taxes Collected from guests',XM(o.tax)],
+    ['  Total',XM(r2(o.otherRev+o.tax))],[],
+    ['Gross Collected Revenue',XM(o.grossCollected)],
     ['Less Expenses (Not Paid by Owner Bank or CC)',XM(o.mgmtExpTot)],
     ['La Quinta Taxes Collected (to be Paid)',XM(o.tax)],
     ['Gross Distribution includes (Taxes to be Paid)',XM(o.grossDist)],
@@ -1058,7 +1063,7 @@ function ownerAoa(u){
     ['  Expendables (Soap, TP, Amenities, Water, etc)',XM(orptNum(u,'mExpend'))],
     ['  Total',XM(o.mgmtExpTot)],[],
     ['Total Expenses',XM(o.totalExp)],
-    ['Gross Revenue + Taxes Collected - Expenses = Net Income',XM(o.netIncome)],[],
+    ['Gross Collected Revenue - Total Expenses = Net Income',XM(o.netIncome)],[],
     ['Notes / Issues:'],[o.notes||'']);
   return a;}
 function excelStatement(u){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ownerAoa(u)),safeName(u));XLSX.writeFile(wb,`Owner_${u} ${CURMONTH} Statement.xlsx`.replace(/\s+/g,'_'));}
