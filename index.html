@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.26.0</title>
+<title>La Quinta TOT Tool — v0.26.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -335,7 +335,8 @@
       <div class="panel hidden" id="ownerExpPanel"><h2>Expenses this month <span class="note">(added here &mdash; they feed the statements)</span></h2>
       <div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:12px;background:#fbfcfe">
         <label class="btn sm" style="cursor:pointer">⬆ Import Turno payments CSV<input id="turnoImp" type="file" accept=".csv" class="hidden"></label>
-        <span class="note" style="margin-left:8px">Each cleaning is filed against the month its <b>booking</b> files in, not the month the card was charged &mdash; so importing one month can post fees to the month before. Re-importing the same file is safe.</span>
+        <span class="note" style="margin-left:8px">Import each month's Turno log. Every cleaning is filed against the month its <b>booking</b> files in, not the month the card was charged, so one file can post fees to the month before. Re-importing is safe &mdash; nothing double-counts.</span>
+        <div class="note" style="margin-top:6px"><b>After importing there is nothing else to do</b> for matched charges &mdash; they already appear in each unit's <i>Cleaning Fees (with Turno Fees)</i> line below and on the owner statement. Only rows shown as NOT MATCHED need you.</div>
         <div id="turnoStat" class="note" style="margin-top:8px"></div>
       </div>
       <div style="overflow-x:auto"><table id="ownerExpTable"></table></div><button class="btn sm ghost" id="addExp" style="margin-top:10px">+ Add expense</button></div>
@@ -385,7 +386,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.26.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.26.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -439,6 +440,8 @@ function turnoFor(u,M){M=M||curMonthName();
   return r2(Object.values(TURNO||{}).filter(t=>t.unit===u&&t.month===M).reduce((a,t)=>a+(+t.amt||0),0));}
 function turnoLines(u,M){M=M||curMonthName();
   return Object.entries(TURNO||{}).filter(([k,t])=>t.unit===u&&t.month===M).map(([k,t])=>({id:k,...t}));}
+function unitId(s){const m=String(s||'').match(/(\d{3,5})\s*[-#]?\s*(\d{1,2})?/);
+  return m?(m[1]+(m[2]||'')):'';}
 function parseTurno(rows){
   const out={matched:[],unmatched:[],dupes:0};
   const byConf={};RES.forEach(r=>{if(r.confRaw)byConf[r.confRaw.toUpperCase()]=r;});
@@ -456,11 +459,14 @@ function parseTurno(rows){
     if(cm&&byConf[cm[1].toUpperCase()]){const r=byConf[cm[1].toUpperCase()];
       unit=r.unitCode;month=r.filingMonth;how='matched to '+r.guest+' by confirmation code';}
     else{
-      const pk=normUnit(prop);
-      const cand=allUnits().find(u=>{const k=normUnit(u);return k===pk||(pk.length>3&&(k.indexOf(pk)>=0||pk.indexOf(k)>=0));});
+      /* Turno abbreviates unit names ("CLR 700-8", "50660 #5", "50610-7 Golf Course Views").
+         Compare the unit NUMBER rather than the whole string. */
+      const pid=unitId(prop);
+      const cand=pid?allUnits().find(u=>{const uu=unitId(u);
+        return uu===pid||(pid.length>=4&&uu.endsWith(pid))||(uu.length>=4&&pid.endsWith(uu));}):null;
       const d=new Date(dt);
       if(cand&&!isNaN(d)){unit=cand;month=MONTHS[d.getMonth()]+' '+d.getFullYear();
-        how='no confirmation code — matched on property name and charge date, so check the month';}
+        how='no confirmation code — matched on unit number and charge date, so check the month is right';}
     }
     if(!unit){out.unmatched.push({prop,dt,amt:r2(amt),note});return;}
     if(TURNO[id]){out.dupes++;return;}
@@ -689,7 +695,7 @@ function renderOwnerExp(){
         const lines=Object.keys(byMonth).sort().map(m=>`<b>${m}</b> ${money(byMonth[m])}`).join(' &nbsp;·&nbsp; ');
         let html=out.matched.length?`✓ Imported <b>${out.matched.length}</b> cleaning charge(s): ${lines}.`:'No new charges found.';
         if(out.dupes)html+=` ${out.dupes} already imported and skipped.`;
-        if(out.unmatched.length)html+=`<div style="margin-top:5px"><span class="flagtag">NOT MATCHED</span> ${out.unmatched.map(x=>`${x.prop||'(no property)'} ${x.dt} ${money(x.amt)}`).join('; ')} — no confirmation code and the property name did not match a unit. Enter these by hand below.</div>`;
+        if(out.unmatched.length)html+=`<div style="margin-top:5px"><span class="flagtag">NOT MATCHED</span> ${out.unmatched.map(x=>`${x.prop||'(no property)'} ${x.dt} ${money(x.amt)}`).join('; ')}<div style="margin-top:3px">These could not be tied to a unit. Find the unit below, open it, and add the amount to <b>Cleaning Fees (with Turno Fees)</b> under &ldquo;paid by owner's bank or CC&rdquo;.</div></div>`;
         const other=Object.keys(byMonth).filter(m=>m!==curMonthName());
         if(other.length)html+=`<div style="margin-top:5px" class="note">Charges were posted to ${other.join(', ')} as well as this month — switch months to see them.</div>`;
         document.getElementById('turnoStat').innerHTML=html;
