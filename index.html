@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.28.1</title>
+<title>La Quinta TOT Tool — v0.29.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -387,7 +387,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.28.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.29.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -564,6 +564,7 @@ function computeOwner(u){
   const cfg=unitCfg(u);
   /* Fee basis: GROSS revenue for the month — accommodation plus all other revenue, before the
      platform's commission. Matches the historic owner reports. */
+  /* Fee basis unchanged: revenue before Airbnb's service fee, as it has always been billed. */
   const grossForFee=r2(monthGross+OREV_FIELDS.reduce((s,f)=>s+orptNum(u,f[0]),0));
   const mgmtFee=r2(grossForFee*((+cfg.mgmt||0)/100));
   const pms=+cfg.pms||0,pricing=+cfg.pricing||0;
@@ -582,7 +583,8 @@ function computeOwner(u){
   const perOwner=owners.map(o=>({name:o.name,email:o.email,share:+o.share||0,
     distribution:r2(distribution*((+o.share||0)/100)),net:r2(ownerNet*((+o.share||0)/100))}));
   /* Owner-report totals, laid out the way the existing spreadsheet does it. */
-  const accomRev=r2(rs.reduce((s,r)=>s+(typeof r.monthAccom==='number'?r.monthAccom:r.gross),0));
+  const accomRev=r2(rs.reduce((s,r)=>s+(typeof r.monthAccomNet==='number'?r.monthAccomNet:r.gross),0));
+  const accomGross=r2(rs.reduce((s,r)=>s+(typeof r.monthAccom==='number'?r.monthAccom:r.gross),0));
   const autoClean=r2(rs.reduce((s,r)=>s+(r.clean||0)*((r.nights>=30&&r.payout>0)?(r.monthPayout/r.payout):1),0));
   const autoPet=r2(rs.reduce((s,r)=>s+(r.pet||0)*((r.nights>=30&&r.payout>0)?(r.monthPayout/r.payout):1),0));
   const manOtherRev=r2(OREV_FIELDS.reduce((s,f)=>s+orptNum(u,f[0]),0));
@@ -592,7 +594,7 @@ function computeOwner(u){
   /* Airbnb deducts its service fee before paying, so that money never reaches the owner. Showing it
      as revenue AND as an expense inflates both sides; deduct it here so the revenue column totals to
      the amount actually deposited. */
-  const grossCollected=r2(grossRev+tax-platformFees);
+  const grossCollected=r2(grossRev+tax);   // accommodation is already net of the Airbnb fee
   const ownerExpTot=r2(tax+manOwner);
   const mgmtExpTot=mgmtCharged;
   const totalExp=r2(ownerExpTot+mgmtExpTot);
@@ -614,7 +616,7 @@ function computeOwner(u){
   const cashOnHand=r2(R-mgmtExpTot);
   return {u,cfg,rs,gross,payoutTot,tax,R,hasDeposits,mgmtFee,pms,pricing,manMgmt,manOwner,
     mgmtCharged,distribution,ownerPaid,ownerNet,longTerm,covShort,received,owners,perOwner,shareTot,
-    accomRev,autoClean,autoPet,manOtherRev,otherRev,grossRev,grossCollected,platformFees,ownerExpTot,mgmtExpTot,
+    accomRev,accomGross,autoClean,autoPet,manOtherRev,otherRev,grossRev,grossCollected,platformFees,ownerExpTot,mgmtExpTot,
     totalExp,netIncome,grossDist,bookedNights,days,occRatio,adr,cashOnHand,owed,notyet:notYetPaid,
     notes:orpt(u).notes||''};
 }
@@ -783,7 +785,7 @@ function statementSheet(u){
   const fm=curMonthName(),c=unitCfg(u);
   const names=(o.owners||[]).map(x=>x.name).filter(Boolean).join(', ')||'—';
   const m=x=>money(x);
-  const bk=o.rs.map(r=>`<tr><td>${r.guest}</td><td class="r">${m(typeof r.monthAccom==='number'?r.monthAccom:r.gross)}</td>
+  const bk=o.rs.map(r=>`<tr><td>${r.guest}</td><td class="r">${m(typeof r.monthAccomNet==='number'?r.monthAccomNet:r.gross)}</td>
       <td class="c">${r.ci?r.ci.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}–${r.co?r.co.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</td>
       <td class="c">${r.nights>=30?nightsInMonth(r,fm):r.nights}</td></tr>`).join('')
     ||`<tr><td colspan="4" class="c" style="color:#5a6572">No bookings this period</td></tr>`;
@@ -793,8 +795,7 @@ function statementSheet(u){
     revRow('Direct Booking Fees',orptNum(u,'directFees')),revRow('Early Check in / Late Check out fee',orptNum(u,'earlyLate')),
     revRow('Concierge Services',orptNum(u,'concierge')),revRow('Damage Fees',orptNum(u,'damage')),
     revRow('Cancellation Fees',orptNum(u,'cancelFees')),revRow('Other Income',orptNum(u,'otherInc')),
-    revRow('La Quinta Taxes Collected from guests',o.tax),
-    `<tr><td class="lbl">Less Airbnb service fee <i style="font-weight:400">— deducted before payout</i></td><td class="r">&minus; ${m(o.platformFees)}</td></tr>`].join('');
+    revRow('La Quinta Taxes Collected from guests',o.tax)].join('');
   const ownerExpRows=[revRow('La Quinta Muni Revs Tourist Taxes (11%)',o.tax),
     revRow('Cleaning Fees (with Turno Fees)',r2(orptNum(u,'oClean')+turnoFor(u))),
     revRow('Payment processing fees',orptNum(u,'oPay')),
@@ -824,7 +825,7 @@ function statementSheet(u){
           ${bk}
           <tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(o.accomRev)}</td><td class="lbl"><b>Total Days</b></td><td class="c gr">${o.bookedNights}</td></tr></table>
         <div class="ost">Other Revenue</div>
-        <table class="og">${otherRows}<tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(r2(o.otherRev+o.tax-o.platformFees))}</td></tr></table>
+        <table class="og">${otherRows}<tr><td class="lbl"><b>Total</b></td><td class="r gr">${m(r2(o.otherRev+o.tax))}</td></tr></table>
         <table class="og" style="margin-top:12px">
           <tr><td><b>Gross Collected Revenue</b></td><td class="r gr">${m(o.grossCollected)}</td></tr>
           <tr><td><b>Less Expenses (Not Paid by Owner Bank or CC)</b></td><td class="r am">${m(o.mgmtExpTot)}</td></tr>
@@ -912,7 +913,7 @@ async function buildOwnerPdfDoc(units){
     const dstr=r=>(r.ci?r.ci.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')+'\u2013'+(r.co?r.co.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'');
     if(!rs.length){const h=13;box(LX,ly-h,colW,h);txt('No bookings this period',LX+3,ly-h+3.8,7.4,F,grey);ly-=h;}
     rs.forEach(r=>{const h=13;let cx=LX;
-      const vals=[r.guest,pdfMoney(typeof r.monthAccom==='number'?r.monthAccom:r.gross),dstr(r),String(r.nights>=30?nightsInMonth(r,fm):r.nights)];
+      const vals=[r.guest,pdfMoney(typeof r.monthAccomNet==='number'?r.monthAccomNet:r.gross),dstr(r),String(r.nights>=30?nightsInMonth(r,fm):r.nights)];
       vals.forEach((t,i)=>{box(cx,ly-h,cw[i],h);
         let str=String(t);const sz=7.2;
         while(wid(str,sz,F)>cw[i]-6&&str.length>4)str=str.slice(0,-2);
@@ -925,8 +926,8 @@ async function buildOwnerPdfDoc(units){
     [['Owner Stay Revenue',orptNum(u,'ownerStay')],['Cleaning Fees',o.autoClean],['Mid Stay Cleaning fees',orptNum(u,'midClean')],
      ['Pet Fees',o.autoPet],['Direct Booking Fees',orptNum(u,'directFees')],['Early Check in / Late Check out fee',orptNum(u,'earlyLate')],
      ['Concierge Services',orptNum(u,'concierge')],['Damage Fees',orptNum(u,'damage')],['Cancellation Fees',orptNum(u,'cancelFees')],
-     ['Other Income',orptNum(u,'otherInc')],['La Quinta Taxes Collected from guests',o.tax],['Less Airbnb service fee (deducted before payout)',-o.platformFees]].forEach(function(p3){ly=row(LX,ly,colW,p3[0],pdfMoney(p3[1]),{sz:7.2});});
-    ly=row(LX,ly,colW,'Total',pdfMoney(r2(o.otherRev+o.tax-o.platformFees)),{bold:true,fill:green});
+     ['Other Income',orptNum(u,'otherInc')],['La Quinta Taxes Collected from guests',o.tax]].forEach(function(p3){ly=row(LX,ly,colW,p3[0],pdfMoney(p3[1]),{sz:7.2});});
+    ly=row(LX,ly,colW,'Total',pdfMoney(r2(o.otherRev+o.tax)),{bold:true,fill:green});
     ly-=8;
     ly=row(LX,ly,colW,'Gross Collected Revenue',pdfMoney(o.grossCollected),{bold:true,fill:green});
     ly=row(LX,ly,colW,'Less Expenses (Not Paid by Owner Bank or CC)',pdfMoney(o.mgmtExpTot),{bold:true,fill:amber,valCol:red,sz:6.8});
@@ -1028,7 +1029,7 @@ function ownerAoa(u){
     ['Month',fm],['Owners',(o.owners||[]).map(x=>x.name).filter(Boolean).join(', ')],
     ['Property',c.addr||(rs[0]&&rs[0].unitName)||u],[],
     ['Booking Revenue','Amount','Booking Dates','# of Days']];
-  rs.forEach(r=>a.push([r.guest,XM((typeof r.monthAccom==='number'?r.monthAccom:r.gross)),dt(r),XN(r.nights>=30?nightsInMonth(r,fm):r.nights)]));
+  rs.forEach(r=>a.push([r.guest,XM((typeof r.monthAccomNet==='number'?r.monthAccomNet:r.gross)),dt(r),XN(r.nights>=30?nightsInMonth(r,fm):r.nights)]));
   a.push(['Total',XM(o.accomRev),'Total Days',XN(o.bookedNights)],[],
     ['Other Revenue'],
     ['  Owner Stay Revenue',XM(orptNum(u,'ownerStay'))],['  Cleaning Fees',XM(o.autoClean)],
@@ -1037,8 +1038,7 @@ function ownerAoa(u){
     ['  Concierge Services',XM(orptNum(u,'concierge'))],['  Damage Fees',XM(orptNum(u,'damage'))],
     ['  Cancellation Fees',XM(orptNum(u,'cancelFees'))],['  Other Income',XM(orptNum(u,'otherInc'))],
     ['  La Quinta Taxes Collected from guests',XM(o.tax)],
-    ['  Less Airbnb service fee (deducted before payout)',XM(-o.platformFees)],
-    ['  Total',XM(r2(o.otherRev+o.tax-o.platformFees))],[],
+    ['  Total',XM(r2(o.otherRev+o.tax))],[],
     ['Gross Collected Revenue',XM(o.grossCollected)],
     ['Less Expenses (Not Paid by Owner Bank or CC)',XM(o.mgmtExpTot)],
     ['La Quinta Taxes Collected (to be Paid)',XM(o.tax)],
@@ -1199,6 +1199,10 @@ function applyMonthPayouts(){
     if(r.nights>=30){const rt=r.gross>0?(r.gross-other)/r.gross:1;r.monthAccom=r2(r.monthGross*rt);}
     else r.monthAccom=r2(Math.max(0,r.monthGross-other));
     r.monthOther=r2(r.monthGross-r.monthAccom);
+    /* Airbnb keeps its service fee before paying, so the owner never sees it. Net it straight off
+       the booking's own revenue rather than listing it — the report then totals to the deposit. */
+    r.monthFee=r2((r.commission||0)*(r.payout>0?(r.monthPayout/r.payout):0));
+    r.monthAccomNet=r2(Math.max(0,r.monthAccom-r.monthFee));
   });
 }
 /* Revenue is earned when a stay BEGINS, so a short booking belongs to its check-in month even
