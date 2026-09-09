@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.25.0</title>
+<title>La Quinta TOT Tool — v0.25.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -379,7 +379,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.25.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.25.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -1625,22 +1625,26 @@ function renderNavBadges(){
 function refreshSteps(){document.querySelectorAll('.stepstrip').forEach(renderStepStrip);renderStepper();renderNavBadges();}
 /* reconciliation "Ready to file?" checks */
 function reconChecks(){
-  let cityTax=0;RES.forEach(r=>cityTax+=taxOf(r).total);cityTax=r2(cityTax);
-  let stmtTax=0;unitList().forEach(u=>stmtTax+=computeOwner(u).tax);stmtTax=r2(stmtTax);
-  const needRev=RES.filter(r=>!r.reviewed).length;
+  /* Both sides must count the SAME rows — the ones filing this month. Summing every row in the
+     file compares against statements that are month-scoped, so it can never agree. */
+  const MR=monthRes();
+  let cityTax=0;MR.forEach(r=>cityTax+=taxOf(r).total);cityTax=r2(cityTax);
+  let stmtTax=0;[...new Set(MR.map(r=>r.unitCode))].forEach(u=>stmtTax+=computeOwner(u).tax);stmtTax=r2(stmtTax);
+  const needRev=MR.filter(r=>!r.reviewed).length;
   const totalDep=r2(DEPOSITS.reduce((s,d)=>s+d.amt,0));
   const alloc=r2(DEPOSITS.reduce((s,d)=>s+(d.allocs||[]).reduce((t,a)=>t+(a.amt||0),0),0));
   const unalloc=r2(totalDep-alloc);
-  const noOwner=unitList().filter(u=>!(unitCfg(u).owners||[]).some(o=>o.name));
+  const noOwner=[...new Set(monthRes().map(r=>r.unitCode))].filter(u=>!(unitCfg(u).owners||[]).some(o=>o.name));
   const AX2=airCross();
   return [
-    {ok:DEPOSITS.length>0,label:`Bank statement loaded — ${DEPOSITS.length} deposits`,bad:`Bank statement not loaded — no way to prove the money arrived`},
-    {ok:!!AIRBNB,label:`Airbnb report loaded — ${AIRBNB?money(AIRBNB.sumTax):''} cross-checked`,bad:`Airbnb earnings report not loaded — Airbnb bookings are unverified`},
+    {ok:DEPOSITS.length>0,label:`Bank statement loaded — ${DEPOSITS.length} deposits`,bad:`Bank statement not loaded — drop it on the Home page; without it there is no proof the money arrived`,jump:'home'},
+    {ok:!!AIRBNB,label:`Airbnb report loaded — ${AIRBNB?money(AIRBNB.sumTax):''} cross-checked`,bad:`Airbnb earnings report not loaded — drop it on the Home page; without it Airbnb bookings are unverified`,jump:'home'},
     {ok:!AX2||(AX2.shortfall<=1&&!AX2.rows.some(x=>x.status==='absent')),label:`Airbnb cross-check clear — every listing accounted for`,bad:AX2?(AX2.shortfall>1?`${money(AX2.shortfall)} of Airbnb tax collected but not filed`:`${AX2.rows.filter(x=>x.status==='absent').length} Airbnb listing(s) missing from the Guesty export`):'Airbnb cross-check unavailable',jump:'revenue'},
-    {ok:Math.abs(cityTax-stmtTax)<0.01,label:`Tax ties — City tax ${money(cityTax)} = statements ${money(stmtTax)}`,bad:`Tax mismatch — City tax ${money(cityTax)} vs statements ${money(stmtTax)}`},
-    {ok:needRev===0,label:`All City tax rows reviewed`,bad:`${needRev} City tax row${needRev!==1?'s':''} still need review`,jump:'citytax'},
-    {ok:Math.abs(unalloc)<0.01,label:`Deposits fully allocated — $0 unallocated`,bad:`${money(unalloc)} still unallocated`,jump:'revenue'},
-    {ok:noOwner.length===0,label:`Every booked unit has an owner set`,bad:`${noOwner.length} unit${noOwner.length!==1?'s':''} missing an owner`,jump:'setup'}
+    {ok:Math.abs(cityTax-stmtTax)<0.01,label:`Tax ties — City tax ${money(cityTax)} = statements ${money(stmtTax)}`,
+      bad:`Tax mismatch — City tax ${money(cityTax)} vs statements ${money(stmtTax)}, a ${money(r2(Math.abs(cityTax-stmtTax)))} gap. Open City Tax Document Creation and compare each unit's filing box against its owner statement; a unit with a hand-edited filed base is the usual cause.`,jump:'citytax'},
+    {ok:needRev===0,label:`All City tax rows reviewed`,bad:`${needRev} City tax row${needRev!==1?'s':''} still need review — open City Tax Document Creation and press G or A on each flagged row.`,jump:'citytax'},
+    {ok:Math.abs(unalloc)<0.01,label:`Deposits fully allocated — $0 unallocated`,bad:`${money(unalloc)} of deposits not tied to a booking — open Revenue Reconciliation. If every booking is already matched, this is revenue from a prior month and can be left alone.`,jump:'revenue'},
+    {ok:noOwner.length===0,label:`Every booked unit has an owner set`,bad:`No owner set for ${noOwner.join(', ')} — add them under Owners and setup.`,jump:'setup'}
   ];
 }
 function renderReconChecks(){
