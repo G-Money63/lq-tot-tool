@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.23.0</title>
+<title>La Quinta TOT Tool — v0.23.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -370,6 +370,7 @@
         Print name <input id="sgName" placeholder="Gary Rubens" style="width:180px">
         &nbsp;·&nbsp; Title <input id="sgTitle" placeholder="Manager" style="width:120px">
         <div class="note" style="margin-top:4px">Appears on every No Rental Activity Certification.</div>
+        <div id="setupGaps" class="note" style="margin-top:6px"></div>
       </div><div style="overflow-x:auto"><table id="ownerSetupTable"></table></div></div>
       <div class="panel" id="setEmpty"><div class="note">Load a month or import your owners CSV to begin.</div></div>
     </section>
@@ -378,7 +379,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.23.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.23.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -571,21 +572,30 @@ let OSET_OPEN=new Set();function renderOwnerSetup(){
     const dn=unitDisplayName(u);
     return `<div class="ocard${open?'':' collapsed'}"><div class="ohead">
         <div class="otoggle" data-u="${u}" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><i class="ti ti-chevron-${open?'down':'right'}"></i><b>${u}</b>${dn?` <span class="sub">${dn}</span>`:''}${c.manual?' <span class="newpill">added manually</span>':''}${open?(booked?'':' <span class="sub">(no bookings)</span>'):` <span class="sub">${summ}</span>`}</div>
-        <button class="mini feesBtn" data-u="${u}">⚙ Fees &amp; permit</button></div>
+        <button class="mini feesBtn" data-u="${u}">⚙ Fees</button></div>
       <div class="feesPanel hidden"><span class="note" style="margin-right:6px">Fees:</span>Mgmt <input class="oset onum ucfg" data-u="${u}" data-f="mgmt" type="number" step="0.5" value="${c.mgmt}" style="width:54px">%
           &nbsp;·&nbsp; PMS $<input class="oset onum ucfg" data-u="${u}" data-f="pms" type="number" value="${c.pms}" style="width:54px">
-          &nbsp;·&nbsp; Pricing $<input class="oset onum ucfg" data-u="${u}" data-f="pricing" type="number" value="${c.pricing}" style="width:54px">
-        <div style="margin-top:8px"><span class="note" style="margin-right:6px">City filing:</span>
-          Property address <input class="oset ucfg" data-u="${u}" data-f="addr" value="${(c.addr||'').replace(/"/g,'&quot;')}" placeholder="50660 Santa Rosa Plaza Unit 5" style="width:260px">
-          &nbsp;·&nbsp; STVR permit no. <input class="oset ucfg" data-u="${u}" data-f="permit" value="${(c.permit||'').replace(/"/g,'&quot;')}" placeholder="260540" style="width:90px"></div>
-        <div class="note" style="margin-top:4px">Used on the No Rental Activity Certification and the city report header.</div></div>
+          &nbsp;·&nbsp; Pricing $<input class="oset onum ucfg" data-u="${u}" data-f="pricing" type="number" value="${c.pricing}" style="width:54px"></div>
+      <div class="propRec" style="border:1px solid ${(!c.addr||!c.permit)?'#e8bfc2':'var(--line)'};background:${(!c.addr||!c.permit)?'#fdf1f2':'#fbfcfe'};border-radius:8px;padding:8px 10px;margin:8px 0">
+        <div class="note" style="margin-bottom:5px"><b>Property record</b> — used on the No Rental Activity form and every city report. Enter once; it is kept for all months.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <label class="note">Property address <input class="oset ucfg" data-u="${u}" data-f="addr" value="${(c.addr||'').replace(/"/g,'&quot;')}" placeholder="50660 Santa Rosa Plaza Unit 5" style="width:250px"></label>
+          <label class="note">STVR permit no. <input class="oset ucfg" data-u="${u}" data-f="permit" value="${(c.permit||'').replace(/"/g,'&quot;')}" placeholder="260540" style="width:100px"></label>
+          ${(!c.addr||!c.permit)?'<span class="flagtag">MISSING</span>':'<span class="badge b-full">complete</span>'}
+        </div></div>
       <div class="obody">${ownerRows||'<div class="note">No owners yet.</div>'}
         <button class="mini oadd" data-u="${u}" style="margin-top:6px">＋ owner</button>
         ${c.manual?`<button class="mini rem lstdel" data-u="${u}" style="margin-top:6px;margin-left:6px">✕ Remove listing</button>`:''}
       </div></div>`;}).join('');
   document.getElementById('ownerSetupTable').outerHTML='<div id="ownerSetupTable">'+
-    '<div class="toolbar"><label class="btn sm ghost" style="cursor:pointer">⬆ Import owners CSV<input id="ownImp" type="file" accept=".csv" class="hidden"></label><button class="btn sm" id="addListingBtn_setup">＋ Add new owner</button><span class="note">Adds a new owner and their unit.</span><span id="ownImpStamp" class="note"></span></div>'+addListingFormHtml('setup')+body+'</div>';
-  const imp=document.getElementById('ownImp');if(imp)imp.addEventListener('change',e=>{if(e.target.files[0])importOwnersCsv(e.target.files[0]);});
+    '<div class="toolbar"><button class="btn sm" id="addListingBtn_setup">＋ Add new owner</button><span class="note">Adds a new owner and their unit. Everything on this page is entered once and kept for every month.</span><span id="ownImpStamp" class="note"></span></div>'+addListingFormHtml('setup')+body+'</div>';
+  const gaps=document.getElementById('setupGaps');
+  if(gaps){const sg=signer();
+    const miss=allUnits().filter(u=>{const c=unitCfg(u);return !c.addr||!c.permit;});
+    const bits=[];
+    if(!sg.name)bits.push('the signer print name above');
+    if(miss.length)bits.push(`address or permit for <b>${miss.join(', ')}</b>`);
+    gaps.innerHTML=bits.length?`<span class="flagtag">STILL NEEDED</span> ${bits.join(' &nbsp;·&nbsp; ')} — the city forms leave these blank until they are filled in.`:'<span class="badge b-full">All property records complete.</span>';}
   document.querySelectorAll('.ucfg').forEach(el=>el.addEventListener('change',e=>{const c=unitCfg(e.target.dataset.u);const f=e.target.dataset.f;
     c[f]=(f==='addr'||f==='permit')?e.target.value.trim():(+e.target.value||0);saveOwners();renderOwnerReports();render();}));
   document.querySelectorAll('.oown').forEach(el=>el.addEventListener('change',e=>{const c=unitCfg(e.target.dataset.u),o=c.owners[+e.target.dataset.oi],f=e.target.dataset.f;o[f]=f==='share'?(+e.target.value||0):e.target.value;saveOwners();renderOwnerSetup();renderOwnerReports();}));
