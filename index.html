@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.25.1</title>
+<title>La Quinta TOT Tool — v0.26.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -332,7 +332,13 @@
 
     <section class="view hidden" data-view="owners">
       <div class="stepstrip" data-step="4"></div>
-      <div class="panel hidden" id="ownerExpPanel"><h2>Expenses this month <span class="note">(added here &mdash; they feed the statements)</span></h2><div style="overflow-x:auto"><table id="ownerExpTable"></table></div><button class="btn sm ghost" id="addExp" style="margin-top:10px">+ Add expense</button></div>
+      <div class="panel hidden" id="ownerExpPanel"><h2>Expenses this month <span class="note">(added here &mdash; they feed the statements)</span></h2>
+      <div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:12px;background:#fbfcfe">
+        <label class="btn sm" style="cursor:pointer">⬆ Import Turno payments CSV<input id="turnoImp" type="file" accept=".csv" class="hidden"></label>
+        <span class="note" style="margin-left:8px">Each cleaning is filed against the month its <b>booking</b> files in, not the month the card was charged &mdash; so importing one month can post fees to the month before. Re-importing the same file is safe.</span>
+        <div id="turnoStat" class="note" style="margin-top:8px"></div>
+      </div>
+      <div style="overflow-x:auto"><table id="ownerExpTable"></table></div><button class="btn sm ghost" id="addExp" style="margin-top:10px">+ Add expense</button></div>
       <div class="panel hidden" id="ownerRptPanel"><h2>Owner distributions</h2><div id="ownerRpts"></div></div>
       <div class="panel hidden" id="expPanel"><h2>Detected from bank statement <span class="note">(reference)</span></h2><div style="overflow-x:auto"><table id="expTable"></table></div></div>
       <div class="panel" id="ownEmpty"><div class="note">Load a month and set up owners to see distributions.</div></div>
@@ -379,7 +385,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.25.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.26.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -422,7 +428,47 @@ function saveState(){
 }
 /* ---------- owner reports (split ownership) ---------- */
 const LS_OWN='lqtot_owners_v1',LS_EXP='lqtot_exp_v1';
-const LS_ORPT='lqtot_orpt_v1';
+const LS_ORPT='lqtot_orpt_v1';const LS_TURNO='lqtot_turno_v1';
+/* Turno payments log. Keyed by Turno's own project number so re-importing the same file — or an
+   overlapping one — can never double-charge. Each line is filed against the month its BOOKING
+   files in, not the month the card was charged, so a cleaning always sits beside the revenue it
+   belongs to. */
+let TURNO=lget(LS_TURNO);
+function saveTurno(){lset(LS_TURNO,TURNO);}
+function turnoFor(u,M){M=M||curMonthName();
+  return r2(Object.values(TURNO||{}).filter(t=>t.unit===u&&t.month===M).reduce((a,t)=>a+(+t.amt||0),0));}
+function turnoLines(u,M){M=M||curMonthName();
+  return Object.entries(TURNO||{}).filter(([k,t])=>t.unit===u&&t.month===M).map(([k,t])=>({id:k,...t}));}
+function parseTurno(rows){
+  const out={matched:[],unmatched:[],dupes:0};
+  const byConf={};RES.forEach(r=>{if(r.confRaw)byConf[r.confRaw.toUpperCase()]=r;});
+  rows.forEach(row=>{
+    const type=String(pick(row,['PROJECT TYPE'])||'').trim();
+    const status=String(pick(row,['STATUS'])||'').trim().toLowerCase();
+    const amt=numify(pick(row,['AMOUNT']));
+    if(!amt||status&&status!=='succeeded')return;
+    const id=String(pick(row,['NOTES'])||'').replace(/[^0-9]/g,'')||('X'+Math.random().toString(36).slice(2,9));
+    const note=String(pick(row,['PRIVATE NOTES'])||'');
+    const cm=note.match(/\b(HM[A-Z0-9]{6,})\b/i);
+    const prop=String(pick(row,['PROPERTY'])||'').split('•')[0].trim();
+    const dt=String(pick(row,['PROJECT DATE'])||'').trim();
+    let unit=null,month=null,how='';
+    if(cm&&byConf[cm[1].toUpperCase()]){const r=byConf[cm[1].toUpperCase()];
+      unit=r.unitCode;month=r.filingMonth;how='matched to '+r.guest+' by confirmation code';}
+    else{
+      const pk=normUnit(prop);
+      const cand=allUnits().find(u=>{const k=normUnit(u);return k===pk||(pk.length>3&&(k.indexOf(pk)>=0||pk.indexOf(k)>=0));});
+      const d=new Date(dt);
+      if(cand&&!isNaN(d)){unit=cand;month=MONTHS[d.getMonth()]+' '+d.getFullYear();
+        how='no confirmation code — matched on property name and charge date, so check the month';}
+    }
+    if(!unit){out.unmatched.push({prop,dt,amt:r2(amt),note});return;}
+    if(TURNO[id]){out.dupes++;return;}
+    TURNO[id]={unit,month,amt:r2(amt),date:dt,type:type||'Cleaning',note:note.slice(0,60),how};
+    out.matched.push({id,unit,month,amt:r2(amt),how});
+  });
+  saveTurno();return out;
+}
 const OREV_FIELDS=[['ownerStay','Owner Stay Revenue'],['midClean','Mid Stay Cleaning fees'],['directFees','Direct Booking Fees'],
   ['earlyLate','Early Check in / Late Check out fee'],['concierge','Concierge Services'],['damage','Damage Fees'],
   ['cancelFees','Cancellation Fees'],['otherInc','Other Income']];
@@ -617,7 +663,12 @@ function renderOwnerExp(){
       <div class="note" style="margin:6px 0">Tax, platform fees, cleaning, pet fees and the management fee fill themselves. Type only what the tool cannot know.</div>
       <div class="ogrid">
         <div class="gh">Other Revenue</div>${OREV_FIELDS.map(f=>fld(u,f[0],f[1])).join('')}
-        <div class="gh">Expenses — paid by owner's bank or CC</div>${OEXP_OWNER.map(f=>fld(u,f[0],f[1])).join('')}
+        <div class="gh">Expenses — paid by owner's bank or CC</div>
+        ${(()=>{const L=turnoLines(u);if(!L.length)return '';
+          return `<div style="grid-column:1/-1;border:1px solid #bfe3cd;background:var(--okbg);border-radius:8px;padding:7px 9px;margin:2px 0">
+            <b>From Turno — ${money(turnoFor(u))}</b> already counted in Cleaning Fees (with Turno Fees) below; do not retype it.
+            ${L.map(t=>`<div class="note">· ${t.date} — ${money(t.amt)} <span style="color:var(--muted)">${t.how||''}</span> <button class="mini turnodel" data-id="${t.id}">remove</button></div>`).join('')}</div>`;})()}
+        ${OEXP_OWNER.map(f=>fld(u,f[0],f[1])).join('')}
         <div class="gh">Expenses — you pay, charged to owner</div>${OEXP_MGMT.map(f=>fld(u,f[0],f[1])).join('')}
         <div class="gh">Notes / Issues</div>
         <textarea class="oset orn" data-u="${u}" style="grid-column:1/-1;width:100%;height:52px" placeholder="Unit has been booked, no issues">${(orpt(u).notes||'').replace(/</g,'&lt;')}</textarea>
@@ -627,6 +678,23 @@ function renderOwnerExp(){
     orpt(e.target.dataset.u)[e.target.dataset.f]=+e.target.value||0;saveORPT();renderOwnerReports();}));
   document.querySelectorAll('.orn').forEach(el=>el.addEventListener('change',e=>{
     orpt(e.target.dataset.u).notes=e.target.value;saveORPT();renderOwnerReports();}));
+  document.querySelectorAll('.turnodel').forEach(b=>b.addEventListener('click',e=>{
+    delete TURNO[e.currentTarget.dataset.id];saveTurno();renderOwnerExp();renderOwnerReports();render();}));
+  const ti=document.getElementById('turnoImp');
+  if(ti&&!ti.dataset.wired){ti.dataset.wired='1';
+    ti.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;
+      Papa.parse(f,{header:true,skipEmptyLines:true,complete:res=>{
+        const out=parseTurno(res.data);
+        const byMonth={};out.matched.forEach(m=>{byMonth[m.month]=r2((byMonth[m.month]||0)+m.amt);});
+        const lines=Object.keys(byMonth).sort().map(m=>`<b>${m}</b> ${money(byMonth[m])}`).join(' &nbsp;·&nbsp; ');
+        let html=out.matched.length?`✓ Imported <b>${out.matched.length}</b> cleaning charge(s): ${lines}.`:'No new charges found.';
+        if(out.dupes)html+=` ${out.dupes} already imported and skipped.`;
+        if(out.unmatched.length)html+=`<div style="margin-top:5px"><span class="flagtag">NOT MATCHED</span> ${out.unmatched.map(x=>`${x.prop||'(no property)'} ${x.dt} ${money(x.amt)}`).join('; ')} — no confirmation code and the property name did not match a unit. Enter these by hand below.</div>`;
+        const other=Object.keys(byMonth).filter(m=>m!==curMonthName());
+        if(other.length)html+=`<div style="margin-top:5px" class="note">Charges were posted to ${other.join(', ')} as well as this month — switch months to see them.</div>`;
+        document.getElementById('turnoStat').innerHTML=html;
+        renderOwnerExp();renderOwnerReports();render();
+      }});});}
   return;
   const units=unitList();
   const uopts=v=>`<option value="">— unit —</option>`+units.map(u=>`<option value="${u}"${v===u?' selected':''}>${u}</option>`).join('');
@@ -701,7 +769,7 @@ function statementSheet(u){
     revRow('Concierge Services',orptNum(u,'concierge')),revRow('Damage Fees',orptNum(u,'damage')),
     revRow('Cancellation Fees',orptNum(u,'cancelFees')),revRow('Other Income',orptNum(u,'otherInc'))].join('');
   const ownerExpRows=[revRow('La Quinta Muni Revs Tourist Taxes (11%)',o.tax),
-    revRow('Cleaning Fees (with Turno Fees)',orptNum(u,'oClean')),
+    revRow('Cleaning Fees (with Turno Fees)',r2(orptNum(u,'oClean')+turnoFor(u))),
     revRow('Booking Platform Fees (Air BNB /VRBO) <i style="font-weight:400">— deducted by Airbnb before payout</i>',o.platformFees),
     revRow('Payment processing fees',orptNum(u,'oPay')),
     revRow('Property Management Software Fee (Per listing)',orptNum(u,'oPms')),
@@ -844,7 +912,7 @@ async function buildOwnerPdfDoc(units){
     ly=row(LX,ly,colW,'Occupancy Ratio',o.occRatio.toFixed(2)+'%');
     ly=row(LX,ly,colW,'Average Nightly Rate',pdfMoney(o.adr));
     ry=sect(RX,ry,'Expenses (Paid by Owner Bank or CC)');
-    [['La Quinta Muni Revs Tourist Taxes (11%)',o.tax],['Cleaning Fees (with Turno Fees)',orptNum(u,'oClean')],
+    [['La Quinta Muni Revs Tourist Taxes (11%)',o.tax],['Cleaning Fees (with Turno Fees)',r2(orptNum(u,'oClean')+turnoFor(u))],
      ['Booking Platform Fees (Air BNB /VRBO)',o.platformFees],['Payment processing fees',orptNum(u,'oPay')],
      ['Property Management Software Fee (Per listing)',orptNum(u,'oPms')],['Dynamic Pricing Software Fee (Per listing)',orptNum(u,'oPrice')],
      ['Maintenance & Repairs',orptNum(u,'oMaint')],['Furnishings - new or replacement',orptNum(u,'oFurn')],
@@ -951,7 +1019,7 @@ function ownerAoa(u){
     ['Number of days in Month',XN(o.days)],['Occupancy Ratio',(o.occRatio.toFixed(2))+'%'],['Average Nightly Rate',XM(o.adr)],[],
     ['Expenses (Paid by Owner Bank or CC)'],
     ['  La Quinta Muni Revs Tourist Taxes (11%)',XM(o.tax)],
-    ['  Cleaning Fees (with Turno Fees)',XM(orptNum(u,'oClean'))],
+    ['  Cleaning Fees (with Turno Fees)',XM(r2(orptNum(u,'oClean')+turnoFor(u)))],
     ['  Booking Platform Fees (Air BNB /VRBO) - deducted by Airbnb before payout',XM(o.platformFees)],
     ['  Payment processing fees',XM(orptNum(u,'oPay'))],
     ['  Property Management Software Fee (Per listing)',XM(orptNum(u,'oPms'))],
