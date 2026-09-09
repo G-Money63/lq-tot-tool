@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Quinta TOT Tool — v0.23.1</title>
+<title>La Quinta TOT Tool — v0.24.0</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
@@ -379,7 +379,7 @@
       <div class="panel"><h2>Past months</h2><div id="historyList"><div class="note">No saved months yet.</div></div></div>
     </section>
 
-    <div class="foot">v0.23.1 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
+    <div class="foot">v0.24.0 &middot; working aid, not tax advice &middot; tiers: &le;27 nts 11% &middot; 28&ndash;29 nts 10% TOT only (Non-TBID form) &middot; 30+ nts exempt</div>
   </main>
 </div>
 
@@ -1141,6 +1141,46 @@ function autoMatchDeposits(){
         if(Math.abs(want(open[i])+want(open[j])+want(open[k])-d.amt)<0.02)hit=[open[i],open[j],open[k]];}
     if(hit){d.allocs=hit.map(r=>({conf:r.conf,custom:null,amt:r2(want(r))}));d.suggested=true;
       d.hint='split across '+hit.length+' bookings — amounts match their payouts exactly';}});
+  /* 4. MANY deposits == MANY bookings. Airbnb batches several listings into a payout AND splits
+        a listing across payouts, so no single pairing resolves. If what is left on both sides sums
+        to the same figure, the set is complete and can be filled in order. Sums must match exactly
+        — a near-miss means something is genuinely missing, and that must stay flagged. */
+  (function(){
+    const freeD=DEPOSITS.filter(d=>!d.allocs.length);
+    const openB=live.filter(r=>!done(r));
+    if(freeD.length<2||!openB.length)return;
+    const dTot=r2(freeD.reduce((a,d)=>a+d.amt,0));
+    /* A listing can still be unpaid at month end, so the deposits need only match SOME subset of
+       what is open. Find the subset that sums exactly; if more than one subset fits, the answer is
+       ambiguous and we leave it for a human. */
+    const cand=openB.slice(0,14).map(r=>({r,due:r2(want(r)-covered(r.conf))})).filter(x=>x.due>0.005);
+    let hits=[];
+    const walk=(i,acc,sum)=>{
+      if(hits.length>1)return;
+      if(Math.abs(sum-dTot)<0.02&&acc.length){hits.push(acc.slice());return;}
+      if(i>=cand.length||sum>dTot+0.02)return;
+      walk(i+1,acc.concat([cand[i]]),r2(sum+cand[i].due));
+      walk(i+1,acc,sum);
+    };
+    walk(0,[],0);
+    if(hits.length!==1)return;
+    const chosen=hits[0];
+    const bTot=r2(chosen.reduce((a,x)=>a+x.due,0));
+    const ds=freeD.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const bs=chosen.map(x=>x.r).sort((a,b)=>(a.ci&&b.ci?a.ci-b.ci:0));
+    let di=0,left=ds.length?r2(ds[0].amt):0;
+    bs.forEach(r=>{
+      let need=r2(want(r)-covered(r.conf));
+      while(need>0.005&&di<ds.length){
+        const take=r2(Math.min(need,left));
+        if(take>0.005){ds[di].allocs.push({conf:r.conf,custom:null,amt:take});
+          ds[di].suggested=true;need=r2(need-take);left=r2(left-take);}
+        if(left<=0.005){di++;left=di<ds.length?r2(ds[di].amt):0;}
+      }
+    });
+    const names=bs.map(r=>r.guest).join(' + ');
+    ds.forEach(d=>{if(d.allocs.length)d.hint=`auto-split — these ${ds.length} deposits together equal ${money(bTot)}, exactly the amount still owed on ${bs.length} booking(s): ${names}. Check against Airbnb's payout detail, then press OK.`;});
+  })();
   const yr=(RES.find(r=>r.ci)||{}).ci;const year=yr?yr.getFullYear():new Date().getFullYear();
   const earliest=RES.reduce((m,r)=>r.ci&&(!m||r.ci<m)?r.ci:m,null);
   DEPOSITS.forEach(d=>{if(d.allocs.length)return;
